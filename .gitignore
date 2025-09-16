@@ -1,0 +1,85 @@
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python Caches and Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.hypothesis/
+
+# Logs and Temporary Files
+logs/
+*.log
+*.tmp
+*.temp
+*~
+
+# Build Artifacts and Distributions
+build/
+dist/
+*.egg-info/
+*.egg
+MANIFEST
+pip-wheel-metadata/
+share/python-wheels/
+*.dist-info/
+wheels/
+develop-eggs/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+lib/
+lib64/
+
+# Testing and Coverage
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+coverage.xml
+.nox/
+nose-results/
+
+# Lock Files
+uv.lock
+bun.lock
+
+# Frontend (Bun/Dashboard)
+node_modules/
+.bun/
+dist/
+build/
+*.log
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Project-Specific Directories
+.kilocode/
+.roo/
+.qodo/
+
+# OS and Miscellaneous
+.DS_Store
+Thumbs.db

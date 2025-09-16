@@ -1,0 +1,18 @@
+{
+  "name": "trading-dashboard-frontend",
+  "version": "1.0.0",
+  "description": "Frontend for Trading Dashboard",
+  "main": "static/js/dashboard.js",
+  "scripts": {
+    "build": "echo 'No build step required'",
+    "dev": "echo 'Development server handled by FastAPI'",
+    "install-deps": "bun install"
+  },
+  "dependencies": {
+    "chart.js": "^4.4.0"
+  },
+  "devDependencies": {},
+  "keywords": ["trading", "dashboard", "frontend"],
+  "author": "",
+  "license": "MIT"
+}

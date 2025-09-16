@@ -1,0 +1,49 @@
+[project]
+name = "stock_bot_langgraph"
+version = "0.1.0"
+dependencies = [
+    "langgraph",
+    "langchain-groq",
+    "yfinance",
+    "alpha-vantage",
+    "requests",
+    "beautifulsoup4",
+    "numpy",
+    "pandas",
+    "ta-lib",
+    "vaderSentiment",
+    "textblob",
+    "scipy",
+    "pytest",
+    "pytest-mock",
+    "yahooquery>=2.4.1",
+    "langchain>=0.3.27",
+    "tweepy>=4.16.0",
+    "newsapi-python>=0.2.7",
+    "fredapi>=0.5.2",
+    "python-dotenv>=1.1.1",
+    "scikit-learn>=1.7.2",
+    "tensorflow>=2.20.0",
+    "hmmlearn>=0.3.3",
+    "arch>=7.2.0",
+    "pytest-asyncio>=1.2.0",
+    "fastapi>=0.104.1",
+    "uvicorn[standard]>=0.24.0",
+    "jinja2>=3.1.2",
+    "python-multipart>=0.0.6",
+    "aiofiles>=23.2.1",
+    "websockets>=12.0",
+    "fastapi-login>=1.9.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "catboost>=1.2.8",
+    "optuna>=4.5.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = "."
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.0.0",
+]
