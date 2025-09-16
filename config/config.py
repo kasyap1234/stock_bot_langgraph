@@ -8,7 +8,7 @@ from typing import List
 
 # API Keys - Load from environment variables
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "9YM9MF6IN0GJMMCO")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "***REMOVED***")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 YAHOO_FINANCE_API_KEY = ""  # Usually not required
 FRED_API_KEY = os.getenv("FRED_API_KEY", "")
 NEWS_API_KEY = os.getenv("NEWS_API_KEY", "")
