@@ -1,7 +1,4 @@
-"""
-Automated Trading Strategies Framework
-Implements modular trading strategies with comprehensive backtesting capabilities.
-"""
+
 
 import logging
 from abc import ABC, abstractmethod
@@ -19,7 +16,6 @@ from data.models import State
 from agents.risk_management import RiskManager
 from agents.market_risk_assessment import MarketRiskAssessor
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 try:
@@ -31,7 +27,7 @@ except ImportError:
 
 
 class StrategyConfig:
-    """Configuration class for trading strategies."""
+    
 
     def __init__(
         self,
@@ -57,7 +53,7 @@ class StrategyConfig:
 
 
 class TradingSignal:
-    """Represents a trading signal with metadata."""
+    
 
     def __init__(
         self,
@@ -79,7 +75,7 @@ class TradingSignal:
 
 
 class BaseStrategy(ABC):
-    """Abstract base class for all trading strategies."""
+    
 
     def __init__(self, config: StrategyConfig):
         self.config = config
@@ -91,30 +87,12 @@ class BaseStrategy(ABC):
         data: pd.DataFrame,
         state: Optional[State] = None
     ) -> List[TradingSignal]:
-        """
-        Generate trading signals for the given data.
-
-        Args:
-            data: Historical price data
-            state: Current LangGraph state (optional)
-
-        Returns:
-            List of trading signals
-        """
+        
         pass
 
     @abstractmethod
     def validate_signal(self, signal: TradingSignal, data: pd.DataFrame) -> bool:
-        """
-        Validate a trading signal based on strategy rules.
-
-        Args:
-            signal: Trading signal to validate
-            data: Historical price data
-
-        Returns:
-            True if signal is valid, False otherwise
-        """
+        
         pass
 
     def calculate_position_size(
@@ -123,7 +101,7 @@ class BaseStrategy(ABC):
         price: float,
         risk_per_trade: float = 0.01
     ) -> int:
-        """Calculate position size based on risk management."""
+        
         if self.config.position_sizing['method'] == 'fixed_percentage':
             position_value = capital * self.config.position_sizing['percentage']
             return int(position_value / price)
@@ -140,7 +118,7 @@ class BaseStrategy(ABC):
         current_portfolio_value: float,
         current_positions: Dict[str, int]
     ) -> TradingSignal:
-        """Apply risk management rules to the signal."""
+        
         # Check maximum drawdown
         if current_portfolio_value < (1 - self.config.risk_management['max_drawdown']):
             signal.action = 'HOLD'
@@ -158,7 +136,7 @@ class BaseStrategy(ABC):
 
 
 class TrendFollowingStrategy(BaseStrategy):
-    """Trend Following Strategy with ML confirmation."""
+    
 
     def __init__(self, config: StrategyConfig):
         super().__init__(config)
@@ -170,7 +148,7 @@ class TrendFollowingStrategy(BaseStrategy):
         data: pd.DataFrame,
         state: Optional[State] = None
     ) -> List[TradingSignal]:
-        """Generate trend-following signals."""
+        
         signals = []
 
         if len(data) < max(self.trend_periods):
@@ -213,7 +191,7 @@ class TrendFollowingStrategy(BaseStrategy):
         return signals
 
     def _calculate_trend_indicators(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate trend strength indicators."""
+        
         result = {
             'strong_uptrend': False,
             'strong_downtrend': False,
@@ -252,7 +230,7 @@ class TrendFollowingStrategy(BaseStrategy):
         return result
 
     def _apply_ml_confirmation(self, signals: List[TradingSignal], state: State) -> List[TradingSignal]:
-        """Apply ML model confirmation to signals."""
+        
         confirmed_signals = []
 
         for signal in signals:
@@ -279,7 +257,7 @@ class TrendFollowingStrategy(BaseStrategy):
         return confirmed_signals
 
     def validate_signal(self, signal: TradingSignal, data: pd.DataFrame) -> bool:
-        """Validate trend-following signal."""
+        
         if len(data) < max(self.trend_periods):
             return False
 
@@ -295,7 +273,7 @@ class TrendFollowingStrategy(BaseStrategy):
 
 
 class MeanReversionStrategy(BaseStrategy):
-    """Mean Reversion Strategy with pattern recognition."""
+    
 
     def __init__(self, config: StrategyConfig):
         super().__init__(config)
@@ -309,7 +287,7 @@ class MeanReversionStrategy(BaseStrategy):
         data: pd.DataFrame,
         state: Optional[State] = None
     ) -> List[TradingSignal]:
-        """Generate mean reversion signals."""
+        
         signals = []
 
         if len(data) < self.lookback_period:
@@ -348,7 +326,7 @@ class MeanReversionStrategy(BaseStrategy):
         return signals
 
     def _calculate_mean_reversion_indicators(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate mean reversion indicators."""
+        
         result = {
             'oversold_condition': False,
             'overbought_condition': False,
@@ -402,7 +380,7 @@ class MeanReversionStrategy(BaseStrategy):
         return result
 
     def validate_signal(self, signal: TradingSignal, data: pd.DataFrame) -> bool:
-        """Validate mean reversion signal."""
+        
         if len(data) < self.lookback_period:
             return False
 
@@ -417,7 +395,7 @@ class MeanReversionStrategy(BaseStrategy):
 
 
 class BreakoutStrategy(BaseStrategy):
-    """Breakout Trading Strategy with volume analysis."""
+    
 
     def __init__(self, config: StrategyConfig):
         super().__init__(config)
@@ -430,7 +408,7 @@ class BreakoutStrategy(BaseStrategy):
         data: pd.DataFrame,
         state: Optional[State] = None
     ) -> List[TradingSignal]:
-        """Generate breakout signals."""
+        
         signals = []
 
         if len(data) < self.consolidation_period + 5:
@@ -469,7 +447,7 @@ class BreakoutStrategy(BaseStrategy):
         return signals
 
     def _calculate_breakout_indicators(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate breakout indicators."""
+        
         result = {
             'bullish_breakout': False,
             'bearish_breakout': False,
@@ -517,7 +495,7 @@ class BreakoutStrategy(BaseStrategy):
         return result
 
     def validate_signal(self, signal: TradingSignal, data: pd.DataFrame) -> bool:
-        """Validate breakout signal."""
+        
         if len(data) < self.consolidation_period + 5:
             return False
 
@@ -532,7 +510,7 @@ class BreakoutStrategy(BaseStrategy):
 
 
 class SentimentDrivenStrategy(BaseStrategy):
-    """Sentiment-Driven Strategy using news and social media data."""
+    
 
     def __init__(self, config: StrategyConfig):
         super().__init__(config)
@@ -545,7 +523,7 @@ class SentimentDrivenStrategy(BaseStrategy):
         data: pd.DataFrame,
         state: Optional[State] = None
     ) -> List[TradingSignal]:
-        """Generate sentiment-driven signals."""
+        
         signals = []
 
         if not state or 'sentiment_scores' not in state:
@@ -593,7 +571,7 @@ class SentimentDrivenStrategy(BaseStrategy):
         return signals
 
     def _calculate_sentiment_indicators(self, sentiment_data: Dict, data: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate sentiment-based indicators."""
+        
         result = {
             'bullish_sentiment': False,
             'bearish_sentiment': False,
@@ -627,13 +605,13 @@ class SentimentDrivenStrategy(BaseStrategy):
         return result
 
     def validate_signal(self, signal: TradingSignal, data: pd.DataFrame) -> bool:
-        """Validate sentiment-driven signal."""
+        
         # Sentiment signals are primarily validated by the sentiment data itself
         return signal.confidence > 0.3
 
 
 class EnsembleStrategy(BaseStrategy):
-    """Ensemble Strategy combining multiple approaches with ML weighting."""
+    
 
     def __init__(self, config: StrategyConfig):
         super().__init__(config)
@@ -646,7 +624,7 @@ class EnsembleStrategy(BaseStrategy):
         data: pd.DataFrame,
         state: Optional[State] = None
     ) -> List[TradingSignal]:
-        """Generate ensemble signals by combining multiple strategies."""
+        
         if not self.strategies:
             return []
 
@@ -690,7 +668,7 @@ class EnsembleStrategy(BaseStrategy):
         return []
 
     def _aggregate_signals(self, signals: List[TradingSignal], weights: List[float]) -> Dict[str, Any]:
-        """Aggregate signals from multiple strategies."""
+        
         if not signals:
             return {'action': 'HOLD', 'confidence': 0.0}
 
@@ -725,17 +703,16 @@ class EnsembleStrategy(BaseStrategy):
         }
 
     def validate_signal(self, signal: TradingSignal, data: pd.DataFrame) -> bool:
-        """Validate ensemble signal."""
+        
         return signal.confidence > self.confidence_threshold
 
 
-# Strategy Factory
 class StrategyFactory:
-    """Factory class for creating trading strategies."""
+    
 
     @staticmethod
     def create_strategy(strategy_type: str, config: StrategyConfig) -> BaseStrategy:
-        """Create a strategy instance based on type."""
+        
         strategies = {
             'trend_following': TrendFollowingStrategy,
             'mean_reversion': MeanReversionStrategy,
@@ -751,7 +728,7 @@ class StrategyFactory:
 
     @staticmethod
     def get_default_configs() -> Dict[str, StrategyConfig]:
-        """Get default configurations for all strategies."""
+        
         return {
             'trend_following': StrategyConfig(
                 name='Trend Following',

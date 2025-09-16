@@ -4,7 +4,6 @@ import pandas as pd
 from data.apis import get_stock_history, get_fundamentals, get_stock_info, _retry_with_backoff
 from config.config import ALPHA_VANTAGE_API_KEY
 
-# Mock data for testing
 MOCK_HISTORY_DATAFRAME = pd.DataFrame({
     'Open': [150.0, 152.0, 151.5],
     'High': [155.0, 156.0, 155.5],

@@ -1,7 +1,4 @@
-"""
-Market Risk Assessment Module
-Assesses market-wide risks including volatility regimes, gap risk, liquidity risk, and market regime detection.
-"""
+
 
 import logging
 from typing import Dict, List, Optional, Tuple, Union
@@ -14,12 +11,11 @@ import pandas as pd
 from config.config import RISK_TOLERANCE
 from data.models import State
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 
 class MarketRegime(Enum):
-    """Market regime enumeration."""
+    
     BULL = "bull"
     BEAR = "bear"
     SIDEWAYS = "sideways"
@@ -28,7 +24,7 @@ class MarketRegime(Enum):
 
 
 class VolatilityRegime(Enum):
-    """Volatility regime enumeration."""
+    
     LOW = "low"
     NORMAL = "normal"
     HIGH = "high"
@@ -37,7 +33,7 @@ class VolatilityRegime(Enum):
 
 @dataclass
 class MarketRiskMetrics:
-    """Market-wide risk metrics."""
+    
     vix_level: Optional[float] = None
     market_volatility: float = 0.0
     market_trend: str = "neutral"
@@ -57,9 +53,7 @@ class MarketRiskMetrics:
 
 
 class MarketRiskAssessor:
-    """
-    Assesses market-wide risks and provides risk-adjusted position sizing.
-    """
+    
 
     def __init__(self):
         self.market_data_cache: Dict[str, pd.DataFrame] = {}
@@ -67,16 +61,7 @@ class MarketRiskAssessor:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     def assess_market_risk(self, market_data: Dict[str, pd.DataFrame], state: Optional[State] = None) -> MarketRiskMetrics:
-        """
-        Assess overall market risk conditions.
-
-        Args:
-            market_data: Dictionary of market/stock data
-            state: Current LangGraph state
-
-        Returns:
-            MarketRiskMetrics object
-        """
+        
         try:
             # Update market data cache
             self.market_data_cache.update(market_data)
@@ -114,16 +99,7 @@ class MarketRiskAssessor:
             return self.risk_metrics
 
     def get_volatility_adjustment(self, base_position_size: float, symbol: str) -> float:
-        """
-        Get volatility-adjusted position size.
-
-        Args:
-            base_position_size: Base position size from Kelly/risk parity
-            symbol: Stock symbol
-
-        Returns:
-            Adjusted position size
-        """
+        
         try:
             # Reduce position size in high volatility regimes
             vol_multiplier = {
@@ -157,7 +133,7 @@ class MarketRiskAssessor:
             return base_position_size
 
     def _detect_market_regime(self, market_data: Dict[str, pd.DataFrame]) -> MarketRegime:
-        """Detect current market regime using multiple indicators."""
+        
         try:
             if not market_data:
                 return MarketRegime.SIDEWAYS
@@ -197,7 +173,7 @@ class MarketRiskAssessor:
             return MarketRegime.SIDEWAYS
 
     def _assess_volatility_regime(self, market_data: Dict[str, pd.DataFrame]) -> VolatilityRegime:
-        """Assess current volatility regime."""
+        
         try:
             if not market_data:
                 return VolatilityRegime.NORMAL
@@ -229,7 +205,7 @@ class MarketRiskAssessor:
             return VolatilityRegime.NORMAL
 
     def _calculate_gap_risk(self, market_data: Dict[str, pd.DataFrame]) -> float:
-        """Calculate overnight gap risk."""
+        
         try:
             if not market_data:
                 return 0.0
@@ -257,7 +233,7 @@ class MarketRiskAssessor:
             return 0.0
 
     def _assess_liquidity_risk(self, market_data: Dict[str, pd.DataFrame]) -> float:
-        """Assess liquidity risk based on volume patterns."""
+        
         try:
             if not market_data:
                 return 0.0
@@ -283,7 +259,7 @@ class MarketRiskAssessor:
             return 0.0
 
     def _calculate_correlation_risk(self, market_data: Dict[str, pd.DataFrame]) -> float:
-        """Calculate correlation risk (how correlated assets have become)."""
+        
         try:
             if len(market_data) < 2:
                 return 0.0
@@ -315,7 +291,7 @@ class MarketRiskAssessor:
             return 0.0
 
     def _detect_sector_rotation(self, market_data: Dict[str, pd.DataFrame]) -> Dict[str, float]:
-        """Detect sector rotation patterns."""
+        
         # Simplified sector detection - in practice would need sector classifications
         try:
             sector_performance = {}
@@ -347,7 +323,7 @@ class MarketRiskAssessor:
             return {}
 
     def _calculate_market_volatility(self, market_data: Dict[str, pd.DataFrame]) -> float:
-        """Calculate overall market volatility."""
+        
         try:
             if not market_data:
                 return 0.0
@@ -366,7 +342,7 @@ class MarketRiskAssessor:
             return 0.0
 
     def _determine_market_trend(self, market_data: Dict[str, pd.DataFrame]) -> str:
-        """Determine overall market trend."""
+        
         try:
             if not market_data:
                 return "neutral"

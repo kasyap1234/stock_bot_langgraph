@@ -1,6 +1,4 @@
-"""
-Tests for the prediction integration module.
-"""
+
 
 import pytest
 import pandas as pd
@@ -15,15 +13,15 @@ from data.models import State
 
 
 class TestPredictionAggregator:
-    """Test cases for PredictionAggregator."""
+    
 
     @pytest.fixture
     def aggregator(self):
-        """Create aggregator instance."""
+        
         return PredictionAggregator()
 
     def test_aggregate_ml_predictions(self, aggregator):
-        """Test ML prediction aggregation."""
+        
         ml_predictions = {
             'latest_prediction': {
                 'predictions': {
@@ -53,7 +51,7 @@ class TestPredictionAggregator:
         assert 0 <= result['confidence_score'] <= 1
 
     def test_combine_with_technical_analysis(self, aggregator):
-        """Test combination with technical analysis."""
+        
         ml_aggregated = {
             'ensemble_prediction': 0.7,
             'confidence_score': 0.8,
@@ -74,7 +72,7 @@ class TestPredictionAggregator:
         assert result['ensemble_signal'] == 'buy'
 
     def test_generate_final_signal(self, aggregator):
-        """Test final signal generation."""
+        
         # High confidence case
         combined = {
             'combined_prediction': 0.8,
@@ -102,7 +100,7 @@ class TestPredictionAggregator:
         assert result_low['signal'] == 'buy'  # Should use technical signal
 
     def test_fallback_logic(self, aggregator):
-        """Test fallback logic when confidence is low."""
+        
         # Test technical analysis fallback
         combined = {
             'combined_prediction': 0.5,
@@ -135,20 +133,20 @@ class TestPredictionAggregator:
 
 
 class TestRealTimePredictor:
-    """Test cases for RealTimePredictor."""
+    
 
     @pytest.fixture
     def rt_predictor(self):
-        """Create real-time predictor instance."""
+        
         return RealTimePredictor()
 
     def test_initialization(self, rt_predictor):
-        """Test initialization."""
+        
         assert rt_predictor.prediction_cache == {}
         assert rt_predictor.cache_timeout.seconds == 900  # 15 minutes
 
     def test_should_update_prediction(self, rt_predictor):
-        """Test cache validation logic."""
+        
         # No cache - should update
         assert rt_predictor.should_update_prediction('TEST') is True
 
@@ -157,7 +155,7 @@ class TestRealTimePredictor:
         assert rt_predictor.should_update_prediction('TEST') is False
 
     def test_cache_prediction(self, rt_predictor):
-        """Test prediction caching."""
+        
         prediction = {'signal': 'buy', 'confidence': 0.8}
 
         rt_predictor.cache_prediction('TEST', prediction)
@@ -166,7 +164,7 @@ class TestRealTimePredictor:
         assert rt_predictor.prediction_cache['TEST']['prediction'] == prediction
 
     def test_get_cached_prediction(self, rt_predictor):
-        """Test cached prediction retrieval."""
+        
         prediction = {'signal': 'buy', 'confidence': 0.8}
         rt_predictor.cache_prediction('TEST', prediction)
 
@@ -180,15 +178,15 @@ class TestRealTimePredictor:
 
 
 class TestPredictionValidator:
-    """Test cases for PredictionValidator."""
+    
 
     @pytest.fixture
     def validator(self):
-        """Create validator instance."""
+        
         return PredictionValidator()
 
     def test_validate_prediction(self, validator):
-        """Test prediction validation."""
+        
         prediction = {
             'signal': 'buy',
             'confidence': 0.8,
@@ -210,7 +208,7 @@ class TestPredictionValidator:
         assert validated_bad['confidence'] < prediction['confidence']  # Should reduce confidence
 
     def test_update_performance_history(self, validator):
-        """Test performance history updates."""
+        
         prediction1 = {'signal': 'buy', 'confidence': 0.8}
         prediction2 = {'signal': 'sell', 'confidence': 0.7}
 
@@ -222,15 +220,15 @@ class TestPredictionValidator:
 
 
 class TestRiskAdjustedPredictor:
-    """Test cases for RiskAdjustedPredictor."""
+    
 
     @pytest.fixture
     def risk_adjuster(self):
-        """Create risk adjuster instance."""
+        
         return RiskAdjustedPredictor()
 
     def test_apply_risk_adjustments(self, risk_adjuster):
-        """Test risk adjustment application."""
+        
         prediction = {
             'signal': 'buy',
             'confidence': 0.8,
@@ -253,7 +251,7 @@ class TestRiskAdjustedPredictor:
         assert adjusted_anomaly['confidence'] < prediction['confidence']
 
     def test_market_regime_adjustment(self, risk_adjuster):
-        """Test market regime-based adjustments."""
+        
         prediction = {
             'signal': 'buy',
             'confidence': 0.8
@@ -268,15 +266,15 @@ class TestRiskAdjustedPredictor:
 
 
 class TestPredictionIntegrationAgent:
-    """Test cases for PredictionIntegrationAgent."""
+    
 
     @pytest.fixture
     def agent(self):
-        """Create integration agent instance."""
+        
         return PredictionIntegrationAgent()
 
     def test_generate_integrated_prediction(self, agent):
-        """Test integrated prediction generation."""
+        
         state = State()
         state['stock_data'] = {'TEST.NS': pd.DataFrame({'close': [100, 101, 102]})}
         state['ml_predictions'] = {
@@ -307,7 +305,7 @@ class TestPredictionIntegrationAgent:
         assert prediction['signal'] in ['buy', 'sell', 'neutral']
 
     def test_batch_predict(self, agent):
-        """Test batch prediction."""
+        
         state = State()
         state['stock_data'] = {
             'TEST1.NS': pd.DataFrame({'close': [100, 101, 102]}),

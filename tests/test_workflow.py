@@ -1,8 +1,4 @@
-"""
-Unit tests for workflow functions in main.py using pytest.
-Covers graph construction, node updates, router, execution, error paths.
-Mocks external dependencies for isolation.
-"""
+
 
 import pytest
 import logging
@@ -12,10 +8,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-# Core imports
 from langgraph.graph import StateGraph, CompiledStateGraph, START, END
 
-# Local imports
 from main import (
     build_workflow_graph,
     should_simulate,
@@ -39,7 +33,6 @@ from recommendation.final_recommendation import final_recommendation_agent
 from simulation.simulation_runner import run_trading_simulation
 from analysis import PerformanceAnalyzer
 
-# Sample data
 SAMPLE_STOCKS = ["AAPL"]
 SAMPLE_DATE = datetime.now()
 SAMPLE_DF = pd.DataFrame({
@@ -59,26 +52,25 @@ SAMPLE_RECOMMENDATION_HOLD_INNER = {"action": "HOLD", "confidence": 0.5, "reason
 SAMPLE_SIM_INNER = {"final_portfolio_value": 1100000.0, "total_return": 0.1}
 SAMPLE_PERF_INNER = {"performance_rating": "Good", "insights": ["Strong returns"]}
 
-# Suppress logging for cleaner test output
 logging.getLogger().setLevel(logging.WARNING)
 
 
 @pytest.fixture
 def initial_state() -> State:
-    """Fixture for initial workflow state."""
+    
     return create_initial_state()
 
 
 @pytest.fixture
 def sample_state() -> State:
-    """Fixture for sample populated state."""
+    
     state = create_initial_state()
     state["stock_data"] = {"AAPL": SAMPLE_DF}
     return state
 
 
 def test_create_initial_state():
-    """Test initial state creation."""
+    
     state = create_initial_state()
     expected_keys = [
         "stock_data", "technical_signals", "fundamental_analysis",
@@ -92,7 +84,7 @@ def test_create_initial_state():
 
 
 class TestBuildWorkflowGraph:
-    """Tests for build_workflow_graph function."""
+    
 
     @patch('main.data_fetcher_agent')
     @patch('main.technical_analysis_agent')
@@ -104,7 +96,7 @@ class TestBuildWorkflowGraph:
     @patch('main.performance_node')
     def test_build_workflow_graph_structure(self, mock_perf, mock_sim, mock_final, mock_risk,
                                             mock_sent, mock_fund, mock_tech, mock_data):
-        """Test graph compilation and structure (nodes, edges, conditionals)."""
+        
         # Mock node functions to return dict updates
         mock_data.return_value = {"stock_data": {}}
         mock_tech.return_value = {"technical_signals": {}}
@@ -158,23 +150,23 @@ class TestBuildWorkflowGraph:
         assert isinstance(default_graph, CompiledStateGraph)
 
     def test_build_workflow_graph_error(self):
-        """Test graph build raises ValueError on compilation failure."""
+        
         with patch('main.StateGraph.compile', side_effect=Exception("Compilation failed")):
             with pytest.raises(ValueError, match="Workflow graph compilation failed"):
                 build_workflow_graph(SAMPLE_STOCKS)
 
 
 class TestNodeFunctions:
-    """Tests for individual node functions."""
+    
 
     def test_simulation_node_happy_path(self, sample_state: State):
-        """Test simulation_node with successful simulation."""
+        
         with patch('main.run_trading_simulation', return_value=SAMPLE_SIM_INNER):
             result = simulation_node(sample_state)
             assert result == {"simulation_results": SAMPLE_SIM_INNER}
 
     def test_simulation_node_error(self, sample_state: State, caplog):
-        """Test simulation_node handles exceptions."""
+        
         with caplog.at_level(logging.ERROR):
             with patch('main.run_trading_simulation', side_effect=Exception("Sim error")):
                 result = simulation_node(sample_state)
@@ -182,20 +174,20 @@ class TestNodeFunctions:
                 assert "Simulation failed: Sim error" in caplog.text
 
     def test_performance_node_happy_path(self, sample_state: State):
-        """Test performance_node with valid simulation results."""
+        
         sample_state["simulation_results"] = SAMPLE_SIM_INNER
         with patch.object(PerformanceAnalyzer, 'analyze_strategy_performance', return_value=SAMPLE_PERF_INNER):
             result = performance_node(sample_state)
             assert result == {"performance_analysis": SAMPLE_PERF_INNER}
 
     def test_performance_node_sim_error(self, sample_state: State):
-        """Test performance_node with simulation error."""
+        
         sample_state["simulation_results"] = {"error": "Sim failed"}
         result = performance_node(sample_state)
         assert result == {"performance_analysis": {"error": "No simulation results"}}
 
     def test_performance_node_analysis_error(self, sample_state: State, caplog):
-        """Test performance_node handles analysis exception."""
+        
         sample_state["simulation_results"] = SAMPLE_SIM_INNER
         with caplog.at_level(logging.ERROR):
             with patch.object(PerformanceAnalyzer, 'analyze_strategy_performance', side_effect=Exception("Analysis error")):
@@ -205,7 +197,7 @@ class TestNodeFunctions:
 
 
 class TestShouldSimulate:
-    """Tests for should_simulate router function."""
+    
 
     @pytest.mark.parametrize("recommendations, expected", [
         (SAMPLE_RECOMMENDATION_BUY_INNER, "simulation"),
@@ -215,14 +207,14 @@ class TestShouldSimulate:
         ({"action": "HOLD", "other": "data"}, END),
     ])
     def test_should_simulate(self, recommendations: Dict[str, Any], expected: str, initial_state: State):
-        """Test router logic for different recommendation scenarios."""
+        
         state = initial_state.copy()
         state["final_recommendation"] = {"AAPL": recommendations}
         result = should_simulate(state)
         assert result == expected
 
     def test_should_simulate_invalid_rec(self, initial_state: State):
-        """Test with non-dict or missing action recommendations."""
+        
         state = initial_state.copy()
         state["final_recommendation"] = {"AAPL": "invalid"}
         result = should_simulate(state)
@@ -230,11 +222,11 @@ class TestShouldSimulate:
 
 
 class TestRunAnalysisAndSimulation:
-    """Tests for run_analysis_and_simulation function."""
+    
 
     @patch('main.build_workflow_graph')
     def test_run_analysis_happy_path(self, mock_build, capsys):
-        """Test full execution with simulation triggered."""
+        
         # Mocks
         mock_graph = MagicMock()
         mock_build.return_value = mock_graph
@@ -263,7 +255,7 @@ class TestRunAnalysisAndSimulation:
 
     @patch('main.build_workflow_graph')
     def test_run_analysis_no_simulation(self, mock_build, capsys):
-        """Test execution without simulation (HOLD)."""
+        
         mock_graph = MagicMock()
         mock_build.return_value = mock_graph
         final_state = {"final_recommendation": {"AAPL": SAMPLE_RECOMMENDATION_HOLD_INNER}}
@@ -278,14 +270,14 @@ class TestRunAnalysisAndSimulation:
 
     @patch('main.build_workflow_graph')
     def test_run_analysis_graph_error(self, mock_build):
-        """Test execution fails on graph build."""
+        
         mock_build.side_effect = ValueError("Graph error")
         with pytest.raises(RuntimeError, match="Trading analysis failed"):
             run_analysis_and_simulation(SAMPLE_STOCKS)
 
     @patch('main.build_workflow_graph')
     def test_run_analysis_empty_state(self, mock_build):
-        """Test with empty invoke result."""
+        
         mock_graph = MagicMock()
         mock_build.return_value = mock_graph
         mock_graph.invoke.return_value = None
@@ -294,7 +286,7 @@ class TestRunAnalysisAndSimulation:
 
     @patch('main.build_workflow_graph')
     def test_run_analysis_sim_error(self, mock_build, capsys):
-        """Test with simulation error in state."""
+        
         mock_graph = MagicMock()
         mock_build.return_value = mock_graph
         final_state = {"final_recommendation": {"AAPL": SAMPLE_RECOMMENDATION_BUY_INNER}, "simulation_results": {"error": "Sim failed"}}
@@ -308,10 +300,10 @@ class TestRunAnalysisAndSimulation:
 
 
 class TestPrintFunctions:
-    """Tests for output printing functions."""
+    
 
     def test_print_recommendations_happy(self, capsys):
-        """Test printing recommendations."""
+        
         sample_state = {"final_recommendation": {"AAPL": SAMPLE_RECOMMENDATION_BUY_INNER}}
         print_recommendations(sample_state)
         captured = capsys.readouterr()
@@ -320,13 +312,13 @@ class TestPrintFunctions:
         assert "Reasoning: Overall score" in captured.out
 
     def test_print_recommendations_empty(self, capsys):
-        """Test with no recommendations."""
+        
         print_recommendations({"final_recommendation": {}})
         captured = capsys.readouterr()
         assert "No recommendations generated." in captured.out
 
     def test_print_simulation_results_happy(self, capsys):
-        """Test printing successful simulation."""
+        
         print_simulation_results(SAMPLE_SIM_INNER, SAMPLE_PERF_INNER)
         captured = capsys.readouterr()
         assert "Portfolio Simulation Results" in captured.out
@@ -335,22 +327,21 @@ class TestPrintFunctions:
         assert "Key Insights:" in captured.out
 
     def test_print_simulation_results_error(self, capsys):
-        """Test printing simulation error."""
+        
         print_simulation_results({"error": "Sim error"}, {})
         captured = capsys.readouterr()
         assert "Simulation failed: Sim error" in captured.out
 
     def test_print_simulation_results_no_results(self, capsys):
-        """Test with empty results."""
+        
         print_simulation_results({}, {})
         captured = capsys.readouterr()
         assert "Simulation failed: No results" in captured.out
 
 
-# External mocks for error paths coverage
 @patch('yfinance.download')
 def test_data_fetcher_external_error(mock_yf):
-    """Test data_fetcher with yfinance failure (uses sample data)."""
+    
     mock_yf.side_effect = Exception("API error")
     initial_state = create_initial_state()
     result = data_fetcher_agent(initial_state, SAMPLE_STOCKS)
@@ -364,7 +355,7 @@ def test_data_fetcher_external_error(mock_yf):
 @patch('requests.get')
 @patch('config.config.ALPHA_VANTAGE_API_KEY', 'dummy_key')
 def test_fundamental_external_error(mock_key, mock_requests):
-    """Test fundamental_analysis with API failure."""
+    
     mock_resp = MagicMock()
     mock_resp.status_code = 500
     mock_requests.return_value = mock_resp
@@ -375,6 +366,3 @@ def test_fundamental_external_error(mock_key, mock_requests):
     assert result["fundamental_analysis"]["AAPL"] == {"error": "Fundamental analysis failed"}
 
 
-# Coverage note: Tests cover main.py functions (build_workflow_graph, should_simulate, run_analysis_and_simulation, nodes, print functions) >85%.
-# Agents tested via mocks and error paths, integration via workflow invoke.
-# Low overall coverage due to external libs, but core paths verified.

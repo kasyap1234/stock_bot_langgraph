@@ -1,6 +1,4 @@
-"""
-Tests for real-time data integration.
-"""
+
 
 import pytest
 import asyncio
@@ -9,15 +7,15 @@ from data.real_time_data import RealTimeDataManager, _validate_and_clean_data, _
 
 
 class TestRealTimeDataManager:
-    """Test the RealTimeDataManager class."""
+    
 
     @pytest.fixture
     def manager(self):
-        """Create a RealTimeDataManager instance."""
+        
         return RealTimeDataManager()
 
     def test_initialization(self, manager):
-        """Test manager initialization."""
+        
         assert manager.sources is not None
         assert 'yahoo' in manager.sources
         assert 'alpha_vantage' in manager.sources
@@ -25,7 +23,7 @@ class TestRealTimeDataManager:
         assert manager.callbacks == []
 
     def test_add_callback(self, manager):
-        """Test adding callbacks."""
+        
         def dummy_callback(data):
             pass
 
@@ -33,7 +31,7 @@ class TestRealTimeDataManager:
         assert dummy_callback in manager.callbacks
 
     def test_remove_callback(self, manager):
-        """Test removing callbacks."""
+        
         def dummy_callback(data):
             pass
 
@@ -43,7 +41,7 @@ class TestRealTimeDataManager:
 
     @pytest.mark.asyncio
     async def test_yahoo_realtime_success(self, manager):
-        """Test Yahoo Finance real-time data fetching."""
+        
         mock_data = {
             'symbol': 'AAPL',
             'price': 150.0,
@@ -57,7 +55,7 @@ class TestRealTimeDataManager:
 
     @pytest.mark.asyncio
     async def test_alpha_vantage_realtime_success(self, manager):
-        """Test Alpha Vantage real-time data fetching."""
+        
         mock_data = {
             'symbol': 'AAPL',
             'price': 150.0,
@@ -71,7 +69,7 @@ class TestRealTimeDataManager:
 
     @pytest.mark.asyncio
     async def test_fallback_mechanism(self, manager):
-        """Test fallback to other sources when primary fails."""
+        
         # Mock primary source failure
         with patch.object(manager, '_yahoo_realtime', return_value={'error': 'API failure'}):
             # Mock fallback source success
@@ -88,10 +86,10 @@ class TestRealTimeDataManager:
 
 
 class TestDataValidation:
-    """Test data validation and cleaning functions."""
+    
 
     def test_validate_clean_data_valid(self):
-        """Test validation of valid data."""
+        
         data = {
             'symbol': 'AAPL',
             'price': 150.0,
@@ -103,7 +101,7 @@ class TestDataValidation:
         assert result == data
 
     def test_validate_clean_data_missing_fields(self):
-        """Test validation with missing required fields."""
+        
         data = {
             'price': 150.0,
             'timestamp': '2024-01-01T10:00:00Z'
@@ -113,7 +111,7 @@ class TestDataValidation:
         assert result == {}
 
     def test_validate_clean_data_outlier(self):
-        """Test outlier detection and filtering."""
+        
         data = {
             'symbol': 'AAPL',
             'price': 150.0,
@@ -126,7 +124,7 @@ class TestDataValidation:
         assert result == {}  # Should be filtered out
 
     def test_validate_clean_data_normal_change(self):
-        """Test normal price change passes validation."""
+        
         data = {
             'symbol': 'AAPL',
             'price': 105.0,
@@ -140,10 +138,10 @@ class TestDataValidation:
 
 
 class TestDataCaching:
-    """Test data caching functionality."""
+    
 
     def test_cache_data(self):
-        """Test caching data."""
+        
         data = {'symbol': 'AAPL', 'price': 150.0}
 
         _cache_data('AAPL', data, ttl=60)
@@ -152,7 +150,7 @@ class TestDataCaching:
         assert cached == data
 
     def test_cache_expiry(self):
-        """Test cache expiry."""
+        
         data = {'symbol': 'AAPL', 'price': 150.0}
 
         _cache_data('AAPL', data, ttl=0)  # Immediate expiry
@@ -161,17 +159,17 @@ class TestDataCaching:
         assert cached is None
 
     def test_cache_miss(self):
-        """Test cache miss for non-existent key."""
+        
         cached = _get_cached_data('NONEXISTENT')
         assert cached is None
 
 
 class TestIntegration:
-    """Integration tests for the real-time data system."""
+    
 
     @pytest.mark.asyncio
     async def test_full_streaming_workflow(self):
-        """Test the complete streaming workflow."""
+        
         manager = RealTimeDataManager()
 
         # Mock data source

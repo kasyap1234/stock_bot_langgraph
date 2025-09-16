@@ -1,7 +1,4 @@
-"""
-Web scraping functions for stock news from Indian sources.
-Supports Economic Times and other Indian news websites with ethical scraping practices.
-"""
+
 
 import time
 import logging
@@ -15,10 +12,8 @@ from urllib.parse import urljoin, urlparse
 
 from .models import NewsData, NewsItem, create_news_item
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# User agents for ethical scraping - enhanced with more realistic and mobile agents
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -32,32 +27,20 @@ USER_AGENTS = [
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 ]
 
-# Rate limiting constants
 REQUEST_DELAY = 2  # seconds between requests
 BATCH_DELAY = 10    # seconds between batches
 MAX_REQUESTS_PER_BATCH = 5
 
-# Session for connection reuse
 session = requests.Session()
 
 
 def _get_random_user_agent() -> str:
-    """Get a random user agent for requests."""
+    
     return random.choice(USER_AGENTS)
 
 
 def _rate_limited_get(url: str, timeout: int = 30, retries: int = 3) -> Optional[requests.Response]:
-    """
-    Make a rate-limited GET request with retries, proper headers, and user agent rotation.
-
-    Args:
-        url: URL to request
-        timeout: Request timeout in seconds
-        retries: Number of retries on failure
-
-    Returns:
-        Response object or None if failed
-    """
+    
     # Try different user agents on retries to avoid blocks
     for attempt in range(retries + 1):
         # Get a fresh user agent for each attempt
@@ -118,16 +101,7 @@ def _rate_limited_get(url: str, timeout: int = 30, retries: int = 3) -> Optional
 
 
 def scrape_moneycontrol_news(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Scrape news articles from Moneycontrol for a given stock symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
@@ -198,16 +172,7 @@ def scrape_moneycontrol_news(symbol: str, max_articles: int = 10) -> NewsData:
 
 
 def scrape_business_standard_news(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Scrape news articles from Business Standard for a given stock symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
@@ -278,16 +243,7 @@ def scrape_business_standard_news(symbol: str, max_articles: int = 10) -> NewsDa
 
 
 def scrape_livemint_news(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Scrape news articles from Livemint for a given stock symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
@@ -363,16 +319,7 @@ def scrape_livemint_news(symbol: str, max_articles: int = 10) -> NewsData:
 
 
 def scrape_the_hindu_news(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Scrape news articles from The Hindu for a given stock symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
@@ -443,16 +390,7 @@ def scrape_the_hindu_news(symbol: str, max_articles: int = 10) -> NewsData:
 
 
 def scrape_financial_express_news(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Scrape news articles from Financial Express for a given stock symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
@@ -523,16 +461,7 @@ def scrape_financial_express_news(symbol: str, max_articles: int = 10) -> NewsDa
 
 
 def scrape_business_today_news(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Scrape news articles from Business Today for a given stock symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
@@ -603,17 +532,7 @@ def scrape_business_today_news(symbol: str, max_articles: int = 10) -> NewsData:
 
 
 def scrape_google_news_fallback(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Fallback scraping using Google News for a given stock symbol.
-    Used when primary sources are blocked.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
@@ -686,16 +605,7 @@ def scrape_google_news_fallback(symbol: str, max_articles: int = 10) -> NewsData
 
 
 def scrape_news(symbol: str, max_articles: int = 15) -> NewsData:
-    """
-    Scrape news from multiple Indian sources for a stock symbol.
-
-    Args:
-        symbol: Stock symbol
-        max_articles: Maximum total articles to fetch across all sources
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     logger.info(f"Fetching news for {symbol}")
 
     all_news = []

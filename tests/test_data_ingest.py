@@ -7,7 +7,6 @@ from data.ingest import (
 )
 from data.models import validate_stock_data
 
-# Sample stock data for testing
 VALID_STOCK_DATA = {
     'symbol': 'RELIANCE.NS',
     'date': '2023-01-01',
@@ -18,7 +17,6 @@ VALID_STOCK_DATA = {
     'volume': 1000000
 }
 
-# NewsItem data for testing
 VALID_NEWS_ITEM = {
     'title': 'Company announces earnings',
     'url': 'https://example.com/news/1',

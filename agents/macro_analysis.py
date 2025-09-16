@@ -1,28 +1,15 @@
-"""
-Macro analysis agent for macroeconomic indicators scoring.
-Fetches Indian macroeconomic data and computes scores based on economic conditions.
-"""
+
 
 import logging
 from typing import Dict
 from data.models import State
 from data.apis import get_macro_data
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 
 def macro_analysis_agent(state: State) -> State:
-    """
-    Macro analysis agent for the LangGraph workflow.
-    Computes scores from Indian macroeconomic indicators.
-
-    Args:
-        state: Current workflow state
-
-    Returns:
-        Updated state with macro scores (-1 to 1 scale)
-    """
+    
     logging.info("Starting macro analysis agent")
 
     try:

@@ -1,9 +1,5 @@
-"""
-Data fetching and processing package for stock bot.
-Provides unified interface for historical data, fundamentals, and news scraping.
-"""
 
-# Import models
+
 from .models import (
     StockData,
     HistoricalData,
@@ -16,7 +12,6 @@ from .models import (
     validate_stock_data,
 )
 
-# Import API functions
 from .apis import (
     get_stock_history,
     get_fundamentals,
@@ -25,12 +20,10 @@ from .apis import (
     get_macro_data,
 )
 
-# Import scraper functions
 from .scraper import (
     scrape_moneycontrol_news,
 )
 
-# Import ingest functions
 from .ingest import (
     clean_stock_data,
     clean_news_data,

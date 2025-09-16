@@ -1,8 +1,4 @@
-"""
-Advanced feature engineering module for stock prediction models.
-Creates comprehensive feature sets from technical, sentiment, macroeconomic,
-cross-sectional, and temporal data for machine learning models.
-"""
+
 
 import logging
 import pandas as pd
@@ -17,7 +13,6 @@ from config.config import (
 )
 from data.models import State
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 try:
@@ -29,17 +24,14 @@ except ImportError:
 
 
 class FeatureEngineer:
-    """
-    Comprehensive feature engineering for stock prediction models.
-    Combines multiple data sources to create rich feature sets.
-    """
+    
 
     def __init__(self):
         self.sector_mapping = self._load_sector_mapping()
         self.market_cap_cache = {}
 
     def _load_sector_mapping(self) -> Dict[str, str]:
-        """Load sector mapping for Indian stocks."""
+        
         # Basic sector mapping for NIFTY 50 stocks
         return {
             'RELIANCE.NS': 'Energy',
@@ -94,7 +86,7 @@ class FeatureEngineer:
         }
 
     def get_market_cap(self, symbol: str) -> float:
-        """Get market capitalization for a stock."""
+        
         if symbol in self.market_cap_cache:
             return self.market_cap_cache[symbol]
 
@@ -119,7 +111,7 @@ class FeatureEngineer:
         return self.market_cap_cache[symbol]
 
     def create_technical_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Create technical indicator features."""
+        
         features = pd.DataFrame(index=df.index)
 
         # Ensure consistent column names
@@ -265,7 +257,7 @@ class FeatureEngineer:
         return features.dropna()
 
     def create_sentiment_features(self, sentiment_data: Dict[str, Any]) -> pd.Series:
-        """Create sentiment-based features."""
+        
         features = pd.Series(dtype=float)
 
         if not sentiment_data or 'error' in sentiment_data:
@@ -289,7 +281,7 @@ class FeatureEngineer:
         return features
 
     def create_macro_features(self, macro_data: Dict[str, float]) -> pd.Series:
-        """Create macroeconomic features."""
+        
         features = pd.Series({
             'macro_rbi_repo': macro_data.get('RBI_REPO', 0.0),
             'macro_unemployment': macro_data.get('INDIA_UNRATE', 0.0),
@@ -300,7 +292,7 @@ class FeatureEngineer:
         return features
 
     def create_cross_sectional_features(self, symbol: str) -> pd.Series:
-        """Create cross-sectional features."""
+        
         sector = self.sector_mapping.get(symbol, 'Unknown')
         market_cap = self.get_market_cap(symbol)
 
@@ -322,7 +314,7 @@ class FeatureEngineer:
         return features
 
     def create_temporal_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Create temporal features from datetime index."""
+        
         features = pd.DataFrame(index=df.index)
 
         if isinstance(df.index, pd.DatetimeIndex):
@@ -352,7 +344,7 @@ class FeatureEngineer:
         return features
 
     def create_fibonacci_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Create Fibonacci retracement features."""
+        
         features = pd.DataFrame(index=df.index)
 
         if len(df) < 50:
@@ -373,7 +365,7 @@ class FeatureEngineer:
         return features
 
     def create_support_resistance_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Create support and resistance level features."""
+        
         features = pd.DataFrame(index=df.index)
 
         for period_name, period in SUPPORT_RESISTANCE_PERIODS.items():
@@ -393,16 +385,7 @@ class FeatureEngineer:
         return features
 
     def create_all_features(self, state: State, symbol: str) -> pd.DataFrame:
-        """
-        Create comprehensive feature set for a symbol.
-
-        Args:
-            state: Current workflow state
-            symbol: Stock symbol
-
-        Returns:
-            DataFrame with all features
-        """
+        
         stock_data = state.get('stock_data', {})
         sentiment_scores = state.get('sentiment_scores', {})
         macro_scores = state.get('macro_scores', {})
@@ -466,16 +449,7 @@ class FeatureEngineer:
         return combined_features
 
     def prepare_training_data(self, features: pd.DataFrame, target_horizon: int = 5) -> Tuple[pd.DataFrame, pd.Series]:
-        """
-        Prepare features and target for model training.
-
-        Args:
-            features: Feature DataFrame
-            target_horizon: Prediction horizon in days
-
-        Returns:
-            Tuple of (X, y) for training
-        """
+        
         if len(features) < target_horizon + 10:
             logger.warning("Insufficient data for training")
             return pd.DataFrame(), pd.Series()
@@ -497,16 +471,7 @@ class FeatureEngineer:
 
 
 def feature_engineering_agent(state: State) -> State:
-    """
-    Feature engineering agent for the LangGraph workflow.
-    Creates comprehensive feature sets for ML models.
-
-    Args:
-        state: Current workflow state
-
-    Returns:
-        Updated state with engineered features
-    """
+    
     logging.info("Starting feature engineering agent")
 
     stock_data = state.get("stock_data", {})

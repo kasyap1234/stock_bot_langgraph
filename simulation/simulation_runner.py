@@ -1,6 +1,4 @@
-"""
-Simulation runner for running trading strategies in historical and real-time modes.
-"""
+
 
 import logging
 from typing import Dict, List, Optional, Any
@@ -10,7 +8,6 @@ from config.config import SIMULATION_DAYS, TRADE_LIMIT
 from data.models import State
 from .backtesting_engine import BacktestingEngine
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 
@@ -22,19 +19,7 @@ def run_trading_simulation(
     commission_rate: float = 0.001,
     rsi_buy_threshold: Optional[float] = None
 ) -> Dict[str, Any]:
-    """
-    Run a trading simulation using the state analysis results.
-
-    Args:
-        state: Current workflow state with analysis results
-        initial_capital: Starting capital for simulation
-        backtest_days: Number of days to simulate
-        max_trades: Maximum number of trades
-        commission_rate: Brokerage commission rate
-
-    Returns:
-        Dictionary with simulation results and metrics
-    """
+    
     try:
         stock_data = state.get("stock_data", {})
         final_recommendations = state.get("final_recommendation", {})
@@ -146,16 +131,7 @@ def run_trading_simulation(
 
 
 def _analyze_simulation_results(results: Dict[str, Any], state: State) -> Dict[str, Any]:
-    """
-    Additional analysis of simulation results.
-
-    Args:
-        results: Backtest results
-        state: Original workflow state
-
-    Returns:
-        Dictionary with additional analysis insights
-    """
+    
     try:
         analysis = {}
 
@@ -225,7 +201,7 @@ def _analyze_simulation_results(results: Dict[str, Any], state: State) -> Dict[s
 
 
 def _get_performance_rating(total_return: float, sharpe: float, max_drawdown: float) -> str:
-    """Calculate an overall performance rating."""
+    
     rating_score = 0
 
     # Return component
@@ -264,7 +240,7 @@ def _get_performance_rating(total_return: float, sharpe: float, max_drawdown: fl
 
 
 def _summarize_recommendations(recommendations: Dict[str, Dict]) -> Dict[str, Any]:
-    """Summarize the recommendations made by the system."""
+    
     summary = {
         "total_recommendations": len(recommendations),
         "buy_count": 0,
@@ -305,15 +281,7 @@ def _summarize_recommendations(recommendations: Dict[str, Dict]) -> Dict[str, An
 
 
 def validate_simulation_state(state: State) -> bool:
-    """
-    Validate that the state has sufficient data for simulation.
-
-    Args:
-        state: Workflow state
-
-    Returns:
-        True if valid for simulation, False otherwise
-    """
+    
     required_keys = ["stock_data", "final_recommendation"]
 
     # Check required keys exist

@@ -1,7 +1,4 @@
-"""
-Final recommendation agent for stock trading decisions.
-Combines technical, fundamental, sentiment, and risk analysis to provide trading recommendations.
-"""
+
 
 import logging
 import pandas as pd
@@ -14,10 +11,8 @@ from config.config import MODEL_NAME, GROQ_API_KEY, TEMPERATURE, TOP_N_RECOMMEND
 from data.models import State
 from langchain_core.prompts import PromptTemplate
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# Initialize LLM if available
 _llm = None
 try:
     if GROQ_API_KEY and GROQ_API_KEY != "demo":
@@ -42,7 +37,7 @@ class FactorType(Enum):
 
 @dataclass
 class FactorAnalysis:
-    """Structured analysis of a single factor."""
+    
     factor_type: FactorType
     strength: float  # -1 to 1, where 1 is strong buy signal, -1 is strong sell
     confidence: float  # 0 to 1, confidence in the signal
@@ -53,7 +48,7 @@ class FactorAnalysis:
 
 @dataclass
 class MarketConditions:
-    """Current market conditions assessment."""
+    
     volatility_regime: str  # "low", "medium", "high"
     trend_strength: str  # "weak", "moderate", "strong"
     market_sentiment: str  # "bearish", "neutral", "bullish"
@@ -61,7 +56,7 @@ class MarketConditions:
 
 
 class EnhancedRecommendationEngine:
-    """Enhanced recommendation engine with multi-step reasoning."""
+    
 
     def __init__(self):
         self.base_weights = {
@@ -75,7 +70,7 @@ class EnhancedRecommendationEngine:
         }
 
     def analyze_factors(self, symbol: str, state: State) -> List[FactorAnalysis]:
-        """Perform comprehensive factor analysis."""
+        
         factors = []
 
         # Get stock data for technical (df needed for enhancements)
@@ -135,7 +130,7 @@ class EnhancedRecommendationEngine:
         return factors
 
     def assess_market_conditions(self, factors: List[FactorAnalysis]) -> MarketConditions:
-        """Assess current market conditions based on factor analysis."""
+        
         # Determine volatility regime
         risk_factors = [f for f in factors if f.factor_type == FactorType.RISK]
         if risk_factors:
@@ -202,7 +197,7 @@ class EnhancedRecommendationEngine:
         )
 
     def calculate_dynamic_weights(self, factors: List[FactorAnalysis], market_conditions: MarketConditions) -> Dict[FactorType, float]:
-        """Calculate dynamic weights based on market conditions and factor alignment."""
+        
         weights = self.base_weights.copy()
 
         if DEBUG_RECOMMENDATION_LOGGING:
@@ -263,7 +258,13 @@ class EnhancedRecommendationEngine:
         # Factor alignment adjustment - reduce weight of conflicting factors
         factor_strengths = {f.factor_type: f.strength for f in factors}
         consensus_score = self._calculate_factor_consensus(factor_strengths)
-        if consensus_score < 0.5:  # Low consensus
+        if consensus_score > 0.7:  # High consensus
+            # Increase weight of technical and sentiment factors
+            weights[FactorType.TECHNICAL] *= 1.2
+            weights[FactorType.SENTIMENT] *= 1.2
+            if DEBUG_RECOMMENDATION_LOGGING:
+                logger.debug("High consensus adjustment: Technical +20%, Sentiment +20%")
+        elif consensus_score < 0.5:  # Low consensus
             # Increase weight of high-confidence factors
             for factor in factors:
                 if factor.confidence > 0.7:
@@ -282,7 +283,7 @@ class EnhancedRecommendationEngine:
         return weights
 
     def synthesize_decision(self, factors: List[FactorAnalysis], weights: Dict[FactorType, float]) -> Dict[str, Any]:
-        """Synthesize final decision from weighted factors."""
+        
         # Calculate weighted composite score
         composite_score = 0.0
         total_weight = 0.0
@@ -338,9 +339,9 @@ class EnhancedRecommendationEngine:
             logger.debug(f"Aggressive boosts applied: original={original_score:.3f}, boosted={composite_score:.3f}, positive_factors={positive_factors}")
 
         # Determine action with updated thresholds to reduce HOLD bias
-        if composite_score > 0.2 or (composite_score > 0.1 and positive_factors >= 3):
+        if composite_score > 0.1 or (composite_score > 0.05 and positive_factors >= 3):
             action = "BUY"
-        elif composite_score < -0.2:
+        elif composite_score < -0.1:
             action = "SELL"
         else:
             action = "HOLD"
@@ -363,7 +364,7 @@ class EnhancedRecommendationEngine:
         }
 
     def _calculate_volatility_and_trend(self, df: pd.DataFrame) -> Dict[str, float]:
-        """Calculate volatility (ATR) and trend strength (simple ADX approximation) from data."""
+        
         if len(df) < 20:
             return {'volatility': 0.02, 'trend_strength': 0.5}  # Defaults
         
@@ -385,7 +386,7 @@ class EnhancedRecommendationEngine:
         return {'volatility': volatility, 'trend_strength': trend_strength}
     
     def _get_indicator_performance_weights(self, indicator: str) -> float:
-        """Static performance-based weights (higher for historically reliable indicators)."""
+        
         performance_weights = {
             'RSI': 1.0, 'MACD': 1.1, 'SMA': 0.9, 'EMA': 0.95,
             'Bollinger': 0.9, 'Stochastic': 1.0, 'WilliamsR': 1.05,
@@ -397,7 +398,7 @@ class EnhancedRecommendationEngine:
         return performance_weights.get(indicator, 1.0)
     
     def calculate_dynamic_indicator_weights(self, indicators: List[str], volatility: float, trend_strength: float, is_trending: bool = True) -> Dict[str, float]:
-        """Dynamic weights: adaptive to volatility/trend, performance-based, context-aware."""
+        
         weights = {}
         base_vol_adj = 0.8 if volatility > 0.03 else 1.2 if volatility < 0.01 else 1.0  # Reduce in high vol, boost low
         base_trend_adj = 1.2 if trend_strength > 0.7 else 0.8 if trend_strength < 0.3 else 1.0
@@ -418,7 +419,7 @@ class EnhancedRecommendationEngine:
         return weights
     
     def assess_signal_quality(self, technical: Dict[str, Any], recency_threshold: int = 5) -> Dict[str, Any]:
-        """Filter low-quality/conflicting signals, apply recency weighting."""
+        
         quality_signals = {}
         conflicting = set()
         recent_signals = {k: v for k, v in technical.items() if isinstance(v, str) and k.endswith(('_daily', '_4h', '_1h'))}  # Assume recent TFs
@@ -453,7 +454,7 @@ class EnhancedRecommendationEngine:
         return quality_signals
     
     def calculate_consensus_confidence(self, quality_signals: Dict[str, Any], multi_tf_consistency: float = 0.0, pattern_reliability: float = 1.0, market_vol: float = 0.02) -> float:
-        """Enhanced confidence: consensus, multi-TF boost, pattern adj, market modifiers."""
+        
         buy_count = sum(1 for v in quality_signals.values() if isinstance(v, dict) and v.get('signal') == 'buy')
         sell_count = sum(1 for v in quality_signals.values() if isinstance(v, dict) and v.get('signal') == 'sell')
         total = buy_count + sell_count
@@ -480,7 +481,7 @@ class EnhancedRecommendationEngine:
         return confidence
     
     def ensemble_technical_signals(self, quality_signals: Dict[str, Any], dynamic_weights: Dict[str, float], market_vol: float, trend_strength: float) -> Dict[str, Any]:
-        """Ensemble optimization: weighted voting, robustness checks."""
+        
         score = 0.0
         total_weight = 0.0
         votes = {'buy': 0, 'sell': 0}
@@ -514,7 +515,7 @@ class EnhancedRecommendationEngine:
         return {'strength': strength, 'dominant_signal': dominant, 'votes': votes, 'total_weight': total_weight}
     
     def _aggregate_multi_timeframe_signals(self, technical: Dict[str, Any], df: pd.DataFrame) -> Dict[str, Any]:
-        """Enhanced aggregation with dynamic weighting, quality, ensemble, confidence."""
+        
         timeframes = ['monthly', 'weekly', 'daily']
         timeframe_weights = {'monthly': 0.4, 'weekly': 0.35, 'daily': 0.25}
         
@@ -625,7 +626,7 @@ class EnhancedRecommendationEngine:
         }
 
     def _analyze_technical_factor(self, technical: Dict[str, Any], df: pd.DataFrame) -> FactorAnalysis:
-        """Analyze technical indicators with multi-timeframe aggregation."""
+        
         if 'error' in technical and isinstance(technical['error'], str):
             return FactorAnalysis(
                 factor_type=FactorType.TECHNICAL,
@@ -694,7 +695,7 @@ class EnhancedRecommendationEngine:
         )
 
     def _analyze_fundamental_factor(self, fundamental: Dict[str, Any]) -> FactorAnalysis:
-        """Analyze fundamental indicators."""
+        
         if 'error' in fundamental and isinstance(fundamental['error'], str):
             return FactorAnalysis(
                 factor_type=FactorType.FUNDAMENTAL,
@@ -729,7 +730,7 @@ class EnhancedRecommendationEngine:
         )
 
     def _analyze_sentiment_factor(self, sentiment: Dict[str, Any]) -> FactorAnalysis:
-        """Analyze sentiment indicators."""
+        
         if 'error' in sentiment and isinstance(sentiment['error'], str):
             return FactorAnalysis(
                 factor_type=FactorType.SENTIMENT,
@@ -741,11 +742,11 @@ class EnhancedRecommendationEngine:
             )
 
         compound = sentiment.get('compound', 0)
-        if compound > 0.03:
+        if compound > 0.1:
             strength = min(1.0, compound * 2)
             confidence = min(1.0, abs(compound) * 2)
             reasoning = f"Positive sentiment (compound: {compound:.2f})"
-        elif compound < -0.05:
+        elif compound < -0.1:
             strength = max(-1.0, compound * 2)
             confidence = min(1.0, abs(compound) * 2)
             reasoning = f"Negative sentiment (compound: {compound:.2f})"
@@ -764,7 +765,7 @@ class EnhancedRecommendationEngine:
         )
 
     def _analyze_risk_factor(self, risk: Dict[str, Any]) -> FactorAnalysis:
-        """Analyze risk metrics."""
+        
         if 'error' in risk and isinstance(risk['error'], str):
             return FactorAnalysis(
                 factor_type=FactorType.RISK,
@@ -805,7 +806,7 @@ class EnhancedRecommendationEngine:
         )
 
     def _analyze_macro_factor(self, macro: float, macro_scores: Dict[str, Any]) -> FactorAnalysis:
-        """Analyze macro economic indicators."""
+        
         if "error" in macro_scores:
             return FactorAnalysis(
                 factor_type=FactorType.MACRO,
@@ -830,7 +831,7 @@ class EnhancedRecommendationEngine:
         )
 
     def _analyze_monte_carlo_factor(self, simulation_results: Dict[str, Any]) -> FactorAnalysis:
-        """Analyze Monte Carlo simulation results."""
+        
         if not simulation_results or "error" in simulation_results:
             return FactorAnalysis(
                 factor_type=FactorType.MONTE_CARLO,
@@ -871,7 +872,7 @@ class EnhancedRecommendationEngine:
         )
 
     def _analyze_backtest_factor(self, backtest_results: Dict[str, Any]) -> FactorAnalysis:
-        """Analyze backtest results."""
+        
         if not backtest_results or "error" in backtest_results:
             return FactorAnalysis(
                 factor_type=FactorType.BACKTEST,
@@ -911,7 +912,7 @@ class EnhancedRecommendationEngine:
         )
 
     def _calculate_factor_consensus(self, factor_strengths: Dict[FactorType, float]) -> float:
-        """Calculate consensus among factors."""
+        
         if not factor_strengths:
             return 0.0
 
@@ -927,7 +928,7 @@ class EnhancedRecommendationEngine:
         return consensus
 
     def _calculate_confidence(self, factors: List[FactorAnalysis], composite_score: float, weights: Dict[FactorType, float]) -> float:
-        """Calculate overall confidence in the recommendation."""
+        
         # Base confidence from factor consensus
         factor_strengths = {f.factor_type: f.strength for f in factors}
         consensus = self._calculate_factor_consensus(factor_strengths)
@@ -980,7 +981,7 @@ class EnhancedRecommendationEngine:
         return final_confidence
 
     def _generate_decision_reasoning(self, action: str, composite_score: float, factors: List[FactorAnalysis], weights: Dict[FactorType, float]) -> str:
-        """Generate detailed reasoning for the decision."""
+        
         reasoning_parts = [f"Decision: {action} (Composite Score: {composite_score:.2f})"]
 
         # Add factor contributions
@@ -992,20 +993,11 @@ class EnhancedRecommendationEngine:
         return " | ".join(reasoning_parts)
 
 
-# Global engine instance
 _engine = EnhancedRecommendationEngine()
 
 
 def _rank_buy_candidates(final_recommendations: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Rank BUY candidates by confidence and return the top candidate with ranking details.
-
-    Args:
-        final_recommendations: Dictionary of symbol to recommendation
-
-    Returns:
-        Dictionary with top_buy_candidate and buy_ranking details
-    """
+    
     # Filter for BUY actions with confidence > 40%
     buy_candidates = {
         symbol: rec for symbol, rec in final_recommendations.items()
@@ -1048,16 +1040,7 @@ def _rank_buy_candidates(final_recommendations: Dict[str, Dict[str, Any]]) -> Di
 
 
 def final_recommendation_agent(state: State) -> State:
-    """
-    Final recommendation agent for the LangGraph workflow.
-    Combines all analysis results to provide comprehensive trading recommendations.
-
-    Args:
-        state: Current workflow state
-
-    Returns:
-        Updated state with final recommendations
-    """
+    
     logging.info("Starting final recommendation agent")
 
     stock_data = state.get("stock_data", {})
@@ -1129,21 +1112,7 @@ def _generate_recommendation(
     macro: float,
     state: State
 ) -> Dict[str, Union[str, float]]:
-    """
-    Generate a final recommendation using enhanced multi-step reasoning.
-
-    Args:
-        symbol: Stock symbol
-        technical: Technical analysis signals
-        fundamental: Fundamental analysis results
-        sentiment: Sentiment analysis scores
-        risk: Risk assessment metrics
-        macro: Macro economic score (-1 to 1)
-        state: Full workflow state for comprehensive analysis
-
-    Returns:
-        Dictionary with action, reasoning, and confidence score
-    """
+    
     try:
         # Step 1: Comprehensive factor analysis
         factors = _engine.analyze_factors(symbol, state)
@@ -1190,9 +1159,7 @@ def _generate_recommendation_fallback(
     risk: Dict[str, Union[str, float]],
     macro: float
 ) -> Dict[str, Union[str, float]]:
-    """
-    Fallback recommendation generation using original logic.
-    """
+    
     try:
         # Calculate weighted composite score for swing trading
         scores = _calculate_scores(technical, fundamental, sentiment, risk, macro)
@@ -1307,12 +1274,7 @@ def _generate_recommendation_fallback(
 
 
 def _calculate_scores(technical, fundamental, sentiment, risk, macro) -> Dict[str, float]:
-    """
-    Calculate scores for each analysis type, handling missing data.
-
-    Returns:
-        Dictionary of analysis scores (-1 to 1 normalized)
-    """
+    
     scores = {}
 
     # Technical score, normalized
@@ -1382,15 +1344,7 @@ def _calculate_scores(technical, fundamental, sentiment, risk, macro) -> Dict[st
 
 
 def _determine_action(composite_score: float) -> tuple[str, int]:
-    """
-    Determine the action and confidence based on composite score.
-
-    Args:
-        composite_score: Weighted composite score (-1 to 1)
-
-    Returns:
-        Tuple of (action, confidence percentage)
-    """
+    
     if composite_score > 0.4:
         action = "BUY"
         confidence = min(100, int(50 + composite_score * 50))
@@ -1412,33 +1366,14 @@ def _get_llm_reasoning(
     risk: Dict,
     macro: float
 ) -> Optional[str]:
-    """
-    Get LLM-generated reasoning for the recommendation.
-
-    Args:
-        symbol: Stock symbol
-        technical: Technical analysis results
-        fundamental: Fundamental analysis results
-        sentiment: Sentiment analysis scores
-        risk: Risk assessment metrics
-        macro: Macro score
-
-    Returns:
-        LLM-generated reasoning string
-    """
+    
     if not _llm:
         return None
 
     try:
         prompt_template = PromptTemplate(
             input_variables=["action", "technicals", "fundamentals", "sentiment", "risk", "macro"],
-            template="""Summarize why {action} recommendation is appropriate based on the following data for short-term swing trading. Provide a concise explanation in 2-3 sentences.
-
-Technicals: {technicals}
-Fundamentals: {fundamentals}
-Sentiment: {sentiment}
-Risk: {risk}
-Macro: {macro}"""
+            template=
         )
 
         chain = prompt_template | _llm
@@ -1465,19 +1400,7 @@ def _get_enhanced_llm_reasoning(
     market_conditions: MarketConditions,
     weights: Dict[FactorType, float]
 ) -> Optional[str]:
-    """
-    Get enhanced LLM-generated reasoning using comprehensive factor analysis.
-
-    Args:
-        symbol: Stock symbol
-        decision: Decision dictionary from synthesis
-        factors: List of analyzed factors
-        market_conditions: Current market conditions
-        weights: Dynamic weights used
-
-    Returns:
-        Enhanced LLM-generated reasoning string
-    """
+    
     if not _llm:
         return None
 
@@ -1492,20 +1415,7 @@ def _get_enhanced_llm_reasoning(
 
         prompt_template = PromptTemplate(
             input_variables=["symbol", "action", "confidence", "composite_score", "factors", "market_conditions"],
-            template="""Provide a comprehensive analysis for {symbol} recommending {action} with {confidence:.1%} confidence (composite score: {composite_score:.2f}).
-
-Market Context: {market_conditions}
-
-Factor Analysis:
-{factors}
-
-Provide a detailed 3-4 sentence explanation covering:
-1. Key supporting factors and their contributions
-2. Market condition alignment
-3. Risk considerations
-4. Overall conviction level
-
-Focus on swing trading implications and factor consensus."""
+            template=
         )
 
         chain = prompt_template | _llm

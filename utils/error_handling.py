@@ -1,6 +1,4 @@
-"""
-Error handling utilities and retry mechanisms for the stock bot.
-"""
+
 
 import logging
 import time
@@ -12,22 +10,22 @@ logger = logging.getLogger(__name__)
 
 
 class StockBotError(Exception):
-    """Base exception class for stock bot errors."""
+    
     pass
 
 
 class DataFetchError(StockBotError):
-    """Raised when data fetching fails."""
+    
     pass
 
 
 class APILimitError(StockBotError):
-    """Raised when API rate limits are exceeded."""
+    
     pass
 
 
 class ValidationError(StockBotError):
-    """Raised when data validation fails."""
+    
     pass
 
 
@@ -38,16 +36,7 @@ def retry_with_exponential_backoff(
     backoff_factor: float = 2.0,
     exceptions: tuple = (Exception,)
 ):
-    """
-    Decorator that retries a function with exponential backoff.
-
-    Args:
-        max_retries: Maximum number of retry attempts
-        base_delay: Initial delay in seconds
-        max_delay: Maximum delay between retries
-        backoff_factor: Multiplication factor for delay
-        exceptions: Tuple of exceptions to catch and retry
-    """
+    
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs) -> Any:
@@ -86,13 +75,7 @@ def retry_with_exponential_backoff(
 
 
 def handle_api_errors(exceptions_to_handle: tuple = (requests.RequestException,), custom_message: str = ""):
-    """
-    Decorator to handle API-related exceptions.
-
-    Args:
-        exceptions_to_handle: Tuple of exceptions to handle
-        custom_message: Custom error message prefix
-    """
+    
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs) -> Any:
@@ -111,34 +94,14 @@ def handle_api_errors(exceptions_to_handle: tuple = (requests.RequestException,)
 
 
 def validate_data(func_data: Any, validator_func: Callable[[Any], bool], error_message: str = "Data validation failed"):
-    """
-    Validate data using a validator function.
-
-    Args:
-        func_data: Data to validate
-        validator_func: Function that returns True if data is valid
-        error_message: Error message if validation fails
-
-    Raises:
-        ValidationError: If validation fails
-    """
+    
     if not validator_func(func_data):
         logger.error(error_message)
         raise ValidationError(error_message)
 
 
 def safe_get(data: dict, keys: list, default: Any = None) -> Any:
-    """
-    Safely get nested dictionary values.
-
-    Args:
-        data: Dictionary to extract from
-        keys: List of keys to traverse
-        default: Default value if any key is missing
-
-    Returns:
-        Value at nested key or default
-    """
+    
     try:
         for key in keys:
             if isinstance(data, dict) and key in data:
@@ -151,16 +114,7 @@ def safe_get(data: dict, keys: list, default: Any = None) -> Any:
 
 
 def robust_float_conversion(value: Any, default: float = 0.0) -> float:
-    """
-    Robust conversion to float with proper error handling.
-
-    Args:
-        value: Value to convert
-        default: Default value if conversion fails
-
-    Returns:
-        Float value or default
-    """
+    
     if value is None or value == "":
         return default
 
@@ -179,16 +133,7 @@ def robust_float_conversion(value: Any, default: float = 0.0) -> float:
 
 
 def robust_int_conversion(value: Any, default: int = 0) -> int:
-    """
-    Robust conversion to int with proper error handling.
-
-    Args:
-        value: Value to convert
-        default: Default value if conversion fails
-
-    Returns:
-        Int value or default
-    """
+    
     try:
         # Handle float values (e.g., 100.0 to 100)
         if isinstance(value, float):
@@ -213,16 +158,7 @@ def robust_int_conversion(value: Any, default: int = 0) -> int:
 
 
 def check_api_limits(api_name: str, rate_limits: dict) -> bool:
-    """
-    Check if API rate limits have been exceeded.
-
-    Args:
-        api_name: Name of the API
-        rate_limits: Dictionary with rate limit data
-
-    Returns:
-        True if within limits, False if exceeded
-    """
+    
     # This is a placeholder for rate limiting logic
     # In production, you'd implement actual rate tracking
 
@@ -248,12 +184,7 @@ def check_api_limits(api_name: str, rate_limits: dict) -> bool:
 
 
 def graceful_shutdown(signals: list = None):
-    """
-    Handle graceful shutdown on signals.
-
-    Args:
-        signals: List of signals to handle (defaults to SIGINT, SIGTERM)
-    """
+    
     import signal
     import sys
 
@@ -261,7 +192,7 @@ def graceful_shutdown(signals: list = None):
         signals = [signal.SIGINT, signal.SIGTERM]
 
     def signal_handler(signum, frame):
-        """Signal handler for graceful shutdown."""
+        
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         # Perform cleanup here if needed
         sys.exit(0)
@@ -277,14 +208,7 @@ def retry_indicator_calculation(
     fallback_method: Callable = None,
     exceptions: tuple = (Exception,)
 ):
-    """
-    Decorator for indicator calculations with retry logic, fallback, and detailed logging.
-
-    Args:
-        max_retries: Maximum number of retry attempts
-        fallback_method: Fallback method to use if primary method fails
-        exceptions: Tuple of exceptions to catch and retry
-    """
+    
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs) -> Any:
@@ -330,9 +254,7 @@ def retry_indicator_calculation(
 
 
 def log_error_context(func: Callable) -> Callable:
-    """
-    Decorator to add context to error logging.
-    """
+    
     @wraps(func)
     def wrapper(*args, **kwargs) -> Any:
         try:

@@ -1,7 +1,4 @@
-"""
-Risk Monitoring and Reporting Module
-Provides real-time risk monitoring, alerts, historical analysis, and stress testing capabilities.
-"""
+
 
 import logging
 from typing import Dict, List, Optional, Tuple, Union, Any
@@ -16,12 +13,11 @@ from data.models import State
 from .risk_management import RiskManager, RiskLevel
 from .market_risk_assessment import MarketRiskAssessor, MarketRiskMetrics
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 
 class AlertSeverity(Enum):
-    """Alert severity levels."""
+    
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"
@@ -30,7 +26,7 @@ class AlertSeverity(Enum):
 
 @dataclass
 class RiskAlert:
-    """Risk alert data structure."""
+    
     timestamp: datetime
     severity: AlertSeverity
     message: str
@@ -43,7 +39,7 @@ class RiskAlert:
 
 @dataclass
 class RiskReport:
-    """Comprehensive risk report."""
+    
     timestamp: datetime
     portfolio_value: float
     total_risk: float
@@ -57,9 +53,7 @@ class RiskReport:
 
 
 class RiskMonitor:
-    """
-    Real-time risk monitoring system with alerting and reporting capabilities.
-    """
+    
 
     def __init__(self, risk_manager: RiskManager, market_assessor: MarketRiskAssessor):
         self.risk_manager = risk_manager
@@ -70,7 +64,7 @@ class RiskMonitor:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     def _set_default_thresholds(self) -> Dict[str, Dict[str, float]]:
-        """Set default risk alert thresholds."""
+        
         return {
             'portfolio_drawdown': {'warning': 0.05, 'critical': 0.10, 'emergency': 0.15},
             'daily_loss': {'warning': 0.03, 'critical': 0.05, 'emergency': 0.08},
@@ -81,16 +75,7 @@ class RiskMonitor:
         }
 
     def monitor_risk(self, current_prices: Dict[str, float], market_data: Dict[str, pd.DataFrame]) -> List[RiskAlert]:
-        """
-        Monitor risk in real-time and generate alerts.
-
-        Args:
-            current_prices: Current market prices
-            market_data: Historical market data
-
-        Returns:
-            List of new risk alerts
-        """
+        
         new_alerts = []
 
         try:
@@ -129,15 +114,7 @@ class RiskMonitor:
             return []
 
     def generate_risk_report(self, market_data: Dict[str, pd.DataFrame]) -> RiskReport:
-        """
-        Generate comprehensive risk report.
-
-        Args:
-            market_data: Historical market data
-
-        Returns:
-            RiskReport object
-        """
+        
         try:
             # Get current risk metrics
             risk_metrics = self.risk_manager.get_risk_metrics()
@@ -185,7 +162,7 @@ class RiskMonitor:
             )
 
     def _check_portfolio_alerts(self) -> List[RiskAlert]:
-        """Check portfolio-level risk alerts."""
+        
         alerts = []
         risk_metrics = self.risk_manager.get_risk_metrics()
 
@@ -230,7 +207,7 @@ class RiskMonitor:
         return alerts
 
     def _check_market_risk_alerts(self, market_risk: MarketRiskMetrics) -> List[RiskAlert]:
-        """Check market risk alerts."""
+        
         alerts = []
 
         # Check volatility
@@ -264,7 +241,7 @@ class RiskMonitor:
         return alerts
 
     def _check_position_alerts(self, current_prices: Dict[str, float]) -> List[RiskAlert]:
-        """Check position-level risk alerts."""
+        
         alerts = []
         risk_metrics = self.risk_manager.get_risk_metrics()
 
@@ -288,7 +265,7 @@ class RiskMonitor:
         return alerts
 
     def _calculate_var_metrics(self, market_data: Dict[str, pd.DataFrame]) -> Tuple[float, float]:
-        """Calculate Value at Risk and Expected Shortfall."""
+        
         try:
             if not market_data:
                 return 0.0, 0.0
@@ -321,7 +298,7 @@ class RiskMonitor:
             return 0.0, 0.0
 
     def _calculate_diversification_ratio(self, market_data: Dict[str, pd.DataFrame]) -> float:
-        """Calculate portfolio diversification ratio."""
+        
         try:
             if len(market_data) < 2:
                 return 1.0
@@ -351,7 +328,7 @@ class RiskMonitor:
             return 1.0
 
     def _calculate_total_risk(self, market_data: Dict[str, pd.DataFrame]) -> float:
-        """Calculate total portfolio risk."""
+        
         try:
             var_95, _ = self._calculate_var_metrics(market_data)
             risk_metrics = self.risk_manager.get_risk_metrics()
@@ -370,7 +347,7 @@ class RiskMonitor:
             return 0.0
 
     def _run_stress_tests(self, market_data: Dict[str, pd.DataFrame]) -> Dict[str, float]:
-        """Run portfolio stress tests."""
+        
         stress_scenarios = {
             'market_crash': -0.20,  # 20% market drop
             'high_volatility': 0.15,  # 15% volatility increase
@@ -391,7 +368,7 @@ class RiskMonitor:
         return results
 
     def _generate_recommendations(self, risk_metrics: Dict, market_risk: MarketRiskMetrics) -> List[str]:
-        """Generate risk management recommendations."""
+        
         recommendations = []
 
         try:
@@ -422,7 +399,7 @@ class RiskMonitor:
         return recommendations
 
     def _get_log_level(self, severity: AlertSeverity) -> int:
-        """Convert alert severity to logging level."""
+        
         mapping = {
             AlertSeverity.INFO: logging.INFO,
             AlertSeverity.WARNING: logging.WARNING,
@@ -432,7 +409,7 @@ class RiskMonitor:
         return mapping.get(severity, logging.WARNING)
 
     def get_alert_summary(self, hours: int = 24) -> Dict[str, int]:
-        """Get summary of alerts in the last N hours."""
+        
         cutoff = datetime.now() - timedelta(hours=hours)
         recent_alerts = [a for a in self.alerts if a.timestamp > cutoff]
 

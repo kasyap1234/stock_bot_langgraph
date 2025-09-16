@@ -1,45 +1,15 @@
-"""
-Stock Trading Bot - Main Application
 
-This module implements a comprehensive stock trading analysis bot using LangGraph
-for orchestrating a multi-agent workflow. The bot performs end-to-end analysis including:
-
-- Data fetching from multiple sources (yfinance, Alpha Vantage, web scraping)
-- Technical analysis using TA-Lib and custom indicators
-- Fundamental analysis of company financials
-- Sentiment analysis from news and social media
-- Risk assessment across portfolio and individual assets
-- Final recommendation generation using LLM-powered decision making
-- Optional backtesting simulation on historical data
-
-The workflow is built as a directed graph with parallel agent processing for efficiency,
-ensuring data flows properly through each analysis stage with conditional simulation.
-
-Usage:
-    uv run main.py --ticker RELIANCE.NS
-    uv run main.py --tickers RELIANCE.NS,TCS.NS,INFY.NS
-
-Configuration:
-- Set GROQ_API_KEY in config/config.py for LLM-enhanced recommendations
-- Adjust DEFAULT_STOCKS list for target symbols
-- Modify simulation parameters in simulation/backtesting_engine.py
-
-Dependencies: See pyproject.toml
-"""
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
 
 import logging
 from typing import Optional, Dict, Any, Tuple
 
-# Core imports
 from langgraph.graph import StateGraph, START, END
 
-# Local imports
 import argparse
 
 from config.config import GROQ_API_KEY, MODEL_NAME, DEFAULT_STOCKS, NIFTY_50_STOCKS, TOP_N_RECOMMENDATIONS
@@ -57,15 +27,10 @@ from simulation import run_trading_simulation
 from analysis import PerformanceAnalyzer
 from utils import setup_logging, graceful_shutdown
 
-# ============================================================================
-# CONFIGURATION AND INITIALIZATION
-# ============================================================================
 
-# Setup logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# Initialize LLM (optional, falls back to rule-based analysis if unavailable)
 llm: Optional[Any] = None
 if GROQ_API_KEY and GROQ_API_KEY != "demo":
     try:
@@ -78,17 +43,9 @@ if GROQ_API_KEY and GROQ_API_KEY != "demo":
 else:
     logger.info("LLM not configured, using rule-based recommendations")
 
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
 
 def create_initial_state() -> State:
-    """
-    Create the initial state dictionary for the workflow graph.
-
-    Returns:
-        Initial state with empty analysis containers
-    """
+    
     return {
         "stock_data": {},
         "technical_signals": {},
@@ -103,17 +60,12 @@ def create_initial_state() -> State:
     }
 
 def print_analysis_header() -> None:
-    """Print the header for analysis recommendations."""
+    
     print(f"\n📊 Top {TOP_N_RECOMMENDATIONS} Trading Recommendations (ranked by confidence):")
     print("=" * 50)
 
 def print_recommendations(final_state: State) -> None:
-    """
-    Print formatted analysis recommendations with enhanced multi-stock support.
-
-    Args:
-        final_state: Completed workflow state with recommendations
-    """
+    
     recommendations = final_state.get("final_recommendation", {})
     failed_stocks = final_state.get("failed_stocks", [])
 
@@ -194,13 +146,7 @@ def print_recommendations(final_state: State) -> None:
 
 def print_simulation_results(simulation_results: Dict[str, Any],
                            performance_analysis: Dict[str, Any]) -> None:
-    """
-    Print formatted simulation and performance results.
-
-    Args:
-        simulation_results: Results from trading simulation
-        performance_analysis: Performance metrics and insights
-    """
+    
     if not simulation_results or "error" in simulation_results:
         error_msg = simulation_results.get("error", "Unknown error") if simulation_results else "No results"
         print(f"\n💰 Simulation failed: {error_msg}")
@@ -229,12 +175,9 @@ def print_simulation_results(simulation_results: Dict[str, Any],
         for insight in insights[:3]:  # Show top 3 insights
             print(f"• {insight}")
 
-# ============================================================================
-# WORKFLOW GRAPH CONSTRUCTION
-# ============================================================================
 
 def simulation_node(state: State) -> Dict[str, Any]:
-    """Simulation node to run trading simulation."""
+    
     try:
         rsi_threshold = state.get('rsi_threshold')
         simulation_results = run_trading_simulation(state, rsi_buy_threshold=rsi_threshold)
@@ -247,7 +190,7 @@ def simulation_node(state: State) -> Dict[str, Any]:
 
 
 def performance_node(state: State) -> Dict[str, Any]:
-    """Performance analysis node."""
+    
     simulation_results = state.get("simulation_results", {})
     if "error" not in simulation_results:
         try:
@@ -263,7 +206,7 @@ def performance_node(state: State) -> Dict[str, Any]:
 
 
 def should_simulate(state: State):
-    """Router function for conditional simulation."""
+    
     logger.info(f"should_simulate: backtest={state.get('backtest', False)}, recommendations={state.get('final_recommendation', {})}")
     if state.get('backtest', False):
         return "simulation"
@@ -275,21 +218,7 @@ def should_simulate(state: State):
 
 
 def build_workflow_graph(stocks_to_analyze: Optional[list] = None) -> StateGraph:
-    """
-    Build and compile the trading analysis workflow graph.
-
-    This creates a directed graph with parallel processing for analyses after data_fetcher,
-    followed by sequential risk_assessment -> final_recommendation, and conditional simulation.
-
-    Args:
-        stocks_to_analyze: Optional list of stock symbols to override defaults
-
-    Returns:
-        Compiled StateGraph ready for execution
-
-    Raises:
-        ValueError: If workflow compilation fails
-    """
+    
     try:
         # Create graph with state schema
         graph = StateGraph(State)
@@ -339,30 +268,9 @@ def build_workflow_graph(stocks_to_analyze: Optional[list] = None) -> StateGraph
         logger.error(f"Failed to build workflow graph: {e}")
         raise ValueError("Workflow graph compilation failed") from e
 
-# ============================================================================
-# MAIN ANALYSIS EXECUTION
-# ============================================================================
 
 def run_analysis_and_simulation(stocks_to_analyze: Optional[list] = None, backtest: bool = False, basic: bool = False) -> Tuple[Optional[State], Optional[Dict], Optional[Dict]]:
-    """
-    Execute the complete trading analysis workflow including conditional simulation.
-
-    This is the main orchestration function that:
-    1. Builds the workflow graph
-    2. Initializes state and runs the full graph (analysis + conditional simulation)
-    3. Displays results based on final state
-
-    Args:
-        stocks_to_analyze: Optional list of stock symbols to analyze
-        backtest: Whether to run backtest simulation
-        basic: Whether to use basic RSI mode for backtest
-
-    Returns:
-        Tuple of (final_analysis_state, simulation_results, performance_analysis)
-
-    Raises:
-        RuntimeError: If analysis fails unrecoverably
-    """
+    
     try:
         logger.info("Starting trading analysis workflow")
 
@@ -421,16 +329,9 @@ def run_analysis_and_simulation(stocks_to_analyze: Optional[list] = None, backte
         logger.error(f"Analysis workflow failed: {e}")
         raise RuntimeError("Trading analysis failed") from e
 
-# ============================================================================
-# ENTRY POINT
-# ============================================================================
 
 if __name__ == "__main__":
-    """
-    Application entry point with graceful error handling and CLI args.
-
-    Supports --ticker for single/multiple stocks and --tickers for comma-separated stocks.
-    """
+    
     # Setup graceful shutdown for clean termination
     graceful_shutdown()
 

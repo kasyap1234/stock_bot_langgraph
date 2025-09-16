@@ -1,7 +1,4 @@
-"""
-Backtesting engine for trading strategies.
-Performs historical simulation of trading strategies with realistic conditions.
-"""
+
 
 import logging
 from typing import Dict, List, Optional, Union
@@ -10,7 +7,6 @@ from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 
-# Import new strategy framework
 try:
     from .trading_strategies import (
         BaseStrategy, StrategyConfig, TradingSignal,
@@ -26,13 +22,12 @@ except ImportError:
 from config.config import TRADE_LIMIT, SIMULATION_DAYS
 from data.models import State
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class Trade:
-    """Data class for individual trades."""
+    
     symbol: str
     action: str
     date: datetime
@@ -45,7 +40,7 @@ class Trade:
 
 @dataclass
 class PortfolioSnapshot:
-    """Portfolio state at a point in time."""
+    
     date: datetime
     cash: float
     holdings: Dict[str, int]
@@ -54,10 +49,7 @@ class PortfolioSnapshot:
 
 
 class BacktestingEngine:
-    """
-    Comprehensive backtesting engine for trading strategies.
-    Includes transaction costs, slippage, and realistic market conditions.
-    """
+    
 
     def __init__(
         self,
@@ -88,16 +80,7 @@ class BacktestingEngine:
         end_date: Optional[datetime] = None,
         rsi_buy_threshold: Optional[float] = None
     ) -> Dict[str, Union[float, List, Dict]]:
-        """
-        Run backtest simulation using trading recommendations or dynamic RSI signals.
-
-        Args:
-            recommendations: Dictionary of stock recommendations
-            stock_data: Dictionary of stock data DataFrames
-            start_date: Start date for backtest
-            end_date: End date for backtest
-            rsi_buy_threshold: RSI threshold for buy signals (if using RSI strategy)
-        """
+        
         try:
             # Initialize portfolio
             self._reset_portfolio()
@@ -163,14 +146,14 @@ class BacktestingEngine:
             return {"error": str(e)}
 
     def _reset_portfolio(self):
-        """Reset portfolio to initial state."""
+        
         self.capital = self.initial_capital
         self.holdings = {}
         self.trades = []
         self.portfolio_history = []
 
     def _get_earliest_date(self, stock_data: Dict[str, pd.DataFrame]) -> datetime:
-        """Get the earliest date from available stock data."""
+        
         earliest = None
         for df in stock_data.values():
             if not df.empty:
@@ -188,7 +171,7 @@ class BacktestingEngine:
         stock_data: Dict[str, pd.DataFrame],
         rsi_buy_threshold: Optional[float] = None
     ) -> Dict[str, str]:
-        """Get recommendations for the current date, static or dynamic RSI-based."""
+        
         if rsi_buy_threshold is not None and recommendations is None:
             daily_recs = {}
             for symbol in stock_data:
@@ -223,12 +206,7 @@ class BacktestingEngine:
         stock_data: Dict[str, pd.DataFrame],
         current_date: datetime
     ) -> float:
-        """
-        Execute trades based on recommendations.
-
-        Returns:
-            Total transaction costs incurred
-        """
+        
         total_costs = 0.0
 
         for symbol, action in recommendations.items():
@@ -303,7 +281,7 @@ class BacktestingEngine:
         return total_costs
 
     def _get_price_with_slippage(self, df: pd.DataFrame, date: datetime, action: str) -> float:
-        """Get price for the date with slippage."""
+        
         try:
             if df is None or df.empty:
                 return 0.0
@@ -338,7 +316,7 @@ class BacktestingEngine:
             return 0.0
 
     def _calculate_rsi_series(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI series for the given prices."""
+        
         # Ensure prices is pandas Series to avoid array ambiguity errors
         if not isinstance(prices, pd.Series):
             prices = pd.Series(prices)
@@ -351,7 +329,7 @@ class BacktestingEngine:
         return rsi
 
     def _generate_rsi_signals(self, df: pd.DataFrame, buy_threshold: float) -> Dict[pd.Timestamp, str]:
-        """Generate RSI-based trading signals for the dataframe."""
+        
         # Normalize column names for case sensitivity
         column_map = {'close': 'Close'}
         df = df.rename(columns={k: v for k, v in column_map.items() if k in df.columns and v not in df.columns})
@@ -372,7 +350,7 @@ class BacktestingEngine:
         return signals
 
     def _compute_strategy_returns_from_signals(self, df: pd.DataFrame, signals: Dict[pd.Timestamp, str]) -> pd.Series:
-        """Compute strategy returns based on the generated signals."""
+        
         df = df.copy()
         # Normalize column names for case sensitivity
         column_map = {'close': 'Close'}
@@ -391,7 +369,7 @@ class BacktestingEngine:
         return df['strategy_returns'].dropna()
 
     def _calculate_position_size(self, symbol: str, price: float, action: str) -> int:
-        """Calculate the quantity to trade."""
+        
         try:
             if price <= 0:
                 return 0
@@ -421,7 +399,7 @@ class BacktestingEngine:
             return 0
 
     def _calculate_portfolio_value(self, stock_data: Dict[str, pd.DataFrame], date: Optional[datetime]) -> float:
-        """Calculate current portfolio value."""
+        
         portfolio_value = self.capital
 
         try:
@@ -448,7 +426,7 @@ class BacktestingEngine:
         return portfolio_value
 
     def _calculate_performance_metrics(self) -> Dict[str, Union[float, Dict, List]]:
-        """Calculate comprehensive performance metrics."""
+        
         try:
             # Basic return calculation
             final_value = self.portfolio_history[-1].portfolio_value if self.portfolio_history else self.initial_capital
@@ -527,7 +505,7 @@ class BacktestingEngine:
         num_windows: int = 10,
         candidates: Optional[List[float]] = None
     ) -> float:
-        """Tune RSI buy threshold using walk-forward optimization on rolling windows."""
+        
         if candidates is None:
             candidates = [30, 35, 40, 45]
         symbols = list(stock_data.keys())
@@ -568,19 +546,7 @@ class BacktestingEngine:
         end_date: Optional[datetime] = None,
         state: Optional[State] = None
     ) -> Dict[str, Union[float, List, Dict]]:
-        """
-        Run backtest using the new strategy framework.
-
-        Args:
-            strategy: Trading strategy instance
-            stock_data: Dictionary of stock data DataFrames
-            start_date: Start date for backtest
-            end_date: End date for backtest
-            state: Current LangGraph state
-
-        Returns:
-            Dictionary with backtest results
-        """
+        
         try:
             # Initialize portfolio
             self._reset_portfolio()
@@ -667,17 +633,7 @@ class BacktestingEngine:
         stock_data: Dict[str, pd.DataFrame],
         current_date: datetime
     ) -> float:
-        """
-        Execute trades based on strategy signals.
-
-        Args:
-            signals: Dictionary of trading signals by symbol
-            stock_data: Dictionary of stock data
-            current_date: Current date
-
-        Returns:
-            Total transaction costs
-        """
+        
         total_costs = 0.0
 
         for symbol, signal in signals.items():

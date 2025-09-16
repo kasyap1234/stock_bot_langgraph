@@ -1,6 +1,4 @@
-"""
-Data ingestion utilities for cleaning, validation, and processing stock data.
-"""
+
 
 import logging
 from typing import List, Dict, Any, Optional, Union
@@ -9,20 +7,11 @@ import re
 
 from .models import StockData, HistoricalData, NewsData, NewsItem, validate_stock_data
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 
 def clean_stock_data(stocks_data: List[StockData]) -> HistoricalData:
-    """
-    Clean and validate a list of stock data records.
-
-    Args:
-        stocks_data: List of StockData dictionaries to clean
-
-    Returns:
-        List of cleaned and validated StockData
-    """
+    
     cleaned_data = []
 
     for stock_data in stocks_data:
@@ -43,15 +32,7 @@ def clean_stock_data(stocks_data: List[StockData]) -> HistoricalData:
 
 
 def clean_single_stock_record(stock_data: StockData) -> Optional[StockData]:
-    """
-    Clean a single stock data record.
-
-    Args:
-        stock_data: Single StockData dictionary
-
-    Returns:
-        Cleaned StockData or None if cleaning fails
-    """
+    
     try:
         cleaned = stock_data.copy()
 
@@ -81,15 +62,7 @@ def clean_single_stock_record(stock_data: StockData) -> Optional[StockData]:
 
 
 def clean_symbol(symbol: str) -> str:
-    """
-    Clean and validate stock symbol.
-
-    Args:
-        symbol: Raw symbol string
-
-    Returns:
-        Cleaned symbol string
-    """
+    
     if not isinstance(symbol, str):
         symbol = str(symbol)
 
@@ -110,15 +83,7 @@ def clean_symbol(symbol: str) -> str:
 
 
 def clean_date(date_str: Union[str, Any]) -> str:
-    """
-    Clean and standardize date string.
-
-    Args:
-        date_str: Date in various formats
-
-    Returns:
-        Standardized date string (YYYY-MM-DD)
-    """
+    
     if isinstance(date_str, str):
         date_str = date_str.strip()
 
@@ -163,15 +128,7 @@ def clean_date(date_str: Union[str, Any]) -> str:
 
 
 def clean_price(price: Union[float, int, str, None]) -> Optional[float]:
-    """
-    Clean and validate price values.
-
-    Args:
-        price: Price value to clean
-
-    Returns:
-        Cleaned price as float or None if invalid
-    """
+    
     try:
         if price is None or str(price).lower() in ['nan', 'null', '', 'n/a']:
             return None
@@ -197,15 +154,7 @@ def clean_price(price: Union[float, int, str, None]) -> Optional[float]:
 
 
 def clean_volume(volume: Union[int, float, str, None]) -> Optional[int]:
-    """
-    Clean and validate volume values.
-
-    Args:
-        volume: Volume value to clean
-
-    Returns:
-        Cleaned volume as int or None if invalid
-    """
+    
     try:
         if volume is None or str(volume).lower() in ['nan', 'null', '', 'n/a']:
             return None
@@ -230,15 +179,7 @@ def clean_volume(volume: Union[int, float, str, None]) -> Optional[int]:
 
 
 def clean_news_data(news_data: NewsData) -> NewsData:
-    """
-    Clean and validate news data.
-
-    Args:
-        news_data: List of NewsItem dictionaries
-
-    Returns:
-        List of cleaned NewsItem dictionaries
-    """
+    
     cleaned_news = []
 
     for news_item in news_data:
@@ -253,15 +194,7 @@ def clean_news_data(news_data: NewsData) -> NewsData:
 
 
 def clean_single_news_item(news_item: NewsItem) -> Optional[NewsItem]:
-    """
-    Clean a single news item.
-
-    Args:
-        news_item: NewsItem dictionary to clean
-
-    Returns:
-        Cleaned NewsItem or None if invalid
-    """
+    
     try:
         cleaned = news_item.copy()
 
@@ -297,16 +230,7 @@ def clean_single_news_item(news_item: NewsItem) -> Optional[NewsItem]:
 
 
 def fill_missing_data(stocks_data: HistoricalData, method: str = 'forward_fill') -> HistoricalData:
-    """
-    Fill missing data points in historical stock data.
-
-    Args:
-        stocks_data: List of StockData dictionaries
-        method: Fill method ('forward_fill', 'backward_fill', 'interpolate')
-
-    Returns:
-        List with missing data filled
-    """
+    
     if not stocks_data:
         return stocks_data
 
@@ -341,16 +265,7 @@ def fill_missing_data(stocks_data: HistoricalData, method: str = 'forward_fill')
 
 
 def detect_outliers(stocks_data: HistoricalData, threshold: float = 3.0) -> List[bool]:
-    """
-    Detect outliers in stock data using statistical methods.
-
-    Args:
-        stocks_data: List of StockData dictionaries
-        threshold: Z-score threshold for outlier detection
-
-    Returns:
-        List of boolean values indicating if each data point is an outlier
-    """
+    
     if len(stocks_data) < 2:
         return [False] * len(stocks_data)
 
@@ -380,15 +295,7 @@ def detect_outliers(stocks_data: HistoricalData, threshold: float = 3.0) -> List
 
 
 def remove_duplicates(stocks_data: HistoricalData) -> HistoricalData:
-    """
-    Remove duplicate entries from stock data based on symbol and date.
-
-    Args:
-        stocks_data: List of StockData dictionaries
-
-    Returns:
-        List with duplicates removed, keeping the first occurrence
-    """
+    
     seen = set()
     unique_data = []
 

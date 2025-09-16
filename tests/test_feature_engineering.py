@@ -1,6 +1,4 @@
-"""
-Tests for the feature engineering module.
-"""
+
 
 import pytest
 import pandas as pd
@@ -12,11 +10,11 @@ from data.models import State
 
 
 class TestFeatureEngineer:
-    """Test cases for FeatureEngineer class."""
+    
 
     @pytest.fixture
     def sample_data(self):
-        """Create sample OHLCV data for testing."""
+        
         dates = pd.date_range('2023-01-01', periods=250, freq='D')  # More data for rolling calculations
         np.random.seed(42)
 
@@ -43,17 +41,17 @@ class TestFeatureEngineer:
 
     @pytest.fixture
     def feature_engineer(self):
-        """Create FeatureEngineer instance."""
+        
         return FeatureEngineer()
 
     def test_initialization(self, feature_engineer):
-        """Test FeatureEngineer initialization."""
+        
         assert feature_engineer.sector_mapping is not None
         assert isinstance(feature_engineer.sector_mapping, dict)
         assert 'RELIANCE.NS' in feature_engineer.sector_mapping
 
     def test_create_technical_features(self, feature_engineer, sample_data):
-        """Test technical feature creation."""
+        
         features = feature_engineer.create_technical_features(sample_data)
 
         # Check that features DataFrame is created
@@ -69,7 +67,7 @@ class TestFeatureEngineer:
         assert features['rsi'].dropna().between(0, 100).all()
 
     def test_create_sentiment_features(self, feature_engineer):
-        """Test sentiment feature creation."""
+        
         # Test with valid sentiment data
         sentiment_data = {
             'positive': 0.6,
@@ -88,7 +86,7 @@ class TestFeatureEngineer:
         assert features_empty['sentiment_positive'] == 0.5  # Default neutral
 
     def test_create_macro_features(self, feature_engineer):
-        """Test macroeconomic feature creation."""
+        
         macro_data = {
             'RBI_REPO': -0.5,
             'INDIA_UNRATE': 0.2,
@@ -102,7 +100,7 @@ class TestFeatureEngineer:
         assert features['macro_composite'] == 0.1
 
     def test_create_cross_sectional_features(self, feature_engineer):
-        """Test cross-sectional feature creation."""
+        
         features = feature_engineer.create_cross_sectional_features('RELIANCE.NS')
 
         assert isinstance(features, pd.Series)
@@ -115,7 +113,7 @@ class TestFeatureEngineer:
             assert features[feat] in [0, 1]
 
     def test_create_temporal_features(self, feature_engineer, sample_data):
-        """Test temporal feature creation."""
+        
         features = feature_engineer.create_temporal_features(sample_data)
 
         assert isinstance(features, pd.DataFrame)
@@ -128,7 +126,7 @@ class TestFeatureEngineer:
         assert features['day_cos'].between(-1, 1).all()
 
     def test_create_fibonacci_features(self, feature_engineer, sample_data):
-        """Test Fibonacci feature creation."""
+        
         features = feature_engineer.create_fibonacci_features(sample_data)
 
         assert isinstance(features, pd.DataFrame)
@@ -137,7 +135,7 @@ class TestFeatureEngineer:
         assert len(fib_cols) > 0
 
     def test_create_support_resistance_features(self, feature_engineer, sample_data):
-        """Test support/resistance feature creation."""
+        
         features = feature_engineer.create_support_resistance_features(sample_data)
 
         assert isinstance(features, pd.DataFrame)
@@ -145,7 +143,7 @@ class TestFeatureEngineer:
         assert len(sr_cols) > 0
 
     def test_create_all_features(self, feature_engineer):
-        """Test complete feature creation pipeline."""
+        
         # Create mock state
         state = State()
         state['stock_data'] = {
@@ -168,10 +166,10 @@ class TestFeatureEngineer:
 
 
 class TestFeatureEngineeringAgent:
-    """Test cases for the feature engineering agent."""
+    
 
     def test_agent_with_valid_data(self):
-        """Test agent with valid stock data."""
+        
         state = State()
         state['stock_data'] = {
             'TEST.NS': pd.DataFrame({
@@ -192,7 +190,7 @@ class TestFeatureEngineeringAgent:
         assert isinstance(result_state['engineered_features']['TEST.NS'], pd.DataFrame)
 
     def test_agent_with_no_data(self):
-        """Test agent with no stock data."""
+        
         state = State()
 
         result_state = feature_engineering_agent(state)
@@ -201,7 +199,7 @@ class TestFeatureEngineeringAgent:
         assert result_state == state
 
     def test_agent_with_insufficient_data(self):
-        """Test agent with insufficient data for feature engineering."""
+        
         state = State()
         state['stock_data'] = {
             'TEST.NS': pd.DataFrame({

@@ -1,7 +1,4 @@
-"""
-Data fetching agent for stock market data.
-Handles collection of historical stock data using yfinance.
-"""
+
 
 import logging
 import asyncio
@@ -15,22 +12,12 @@ from config.config import DEFAULT_STOCKS, MAX_WORKERS
 from data.models import State
 from data.real_time_data import real_time_manager
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=128)
 def _get_stock_data(symbol: str, period: str = "1y") -> pd.DataFrame:
-    """
-    Fetch historical stock data for given symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE.NS")
-        period: Time period (e.g., "1y", "2y", "5y")
-
-    Returns:
-        pandas DataFrame with OHLCV data
-    """
+    
     try:
         from yahooquery import Ticker
         ticker = Ticker(symbol)
@@ -57,21 +44,7 @@ def _get_stock_data(symbol: str, period: str = "1y") -> pd.DataFrame:
 
 def data_fetcher_agent(state: State, symbols: List[str] = None, real_time: bool = False,
                       sources: List[str] = None, interval: int = 60) -> State:
-    """
-    Data fetching agent for the LangGraph workflow.
-    Uses parallel fetching for improved performance with multiple stocks.
-    Supports real-time streaming when real_time=True.
-
-    Args:
-        state: Current workflow state
-        symbols: List of stock symbols to fetch (uses DEFAULT_STOCKS if None)
-        real_time: Whether to enable real-time streaming
-        sources: List of data sources to use for real-time (default: ['yahoo', 'alpha_vantage'])
-        interval: Polling interval in seconds for real-time data
-
-    Returns:
-        Updated state with stock data and failed stocks list
-    """
+    
     logging.info(f"Starting data fetcher agent (real_time={real_time})")
 
     if symbols is None:
@@ -150,16 +123,7 @@ def data_fetcher_agent(state: State, symbols: List[str] = None, real_time: bool 
 
 
 def stop_real_time_streaming(state: State, symbols: List[str] = None) -> State:
-    """
-    Stop real-time streaming for specified symbols or all if None.
-
-    Args:
-        state: Current workflow state
-        symbols: List of symbols to stop streaming for (all if None)
-
-    Returns:
-        Updated state
-    """
+    
     if not state.get('real_time_active', False):
         logger.info("Real-time streaming is not active")
         return state

@@ -1,7 +1,4 @@
-"""
-API data fetching functions for stock data.
-Supports yfinance for historical data and alpha_vantage for fundamentals.
-"""
+
 
 import time
 import logging
@@ -18,28 +15,13 @@ from config.config import ALPHA_VANTAGE_API_KEY, FRED_API_KEY, NEWS_API_KEY
 from utils.scraping_utils import rate_limited_get, extract_numeric_value, safe_extract_text, add_request_delay
 from .models import StockData, HistoricalData, FundamentalsData, create_stock_data
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# Rate limiting for alpha vantage (free tier: 5 calls/minute, 500/day)
 RATE_LIMIT_DELAY = 60 / 5  # 5 calls per minute
 
 
 def _retry_with_backoff(func, max_retries: int = 3, base_delay: float = 1.0):
-    """
-    Generic retry function with exponential backoff.
-
-    Args:
-        func: Function to retry
-        max_retries: Maximum number of retries
-        base_delay: Base delay between retries
-
-    Returns:
-        Result of the function call
-
-    Raises:
-        Exception: Last exception if all retries fail
-    """
+    
     last_exception = None
 
     for attempt in range(max_retries + 1):
@@ -64,17 +46,7 @@ def get_stock_history(
     period: str = "1y",
     interval: str = "1d"
 ) -> HistoricalData:
-    """
-    Fetch historical OHLCV data using yfinance.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE.NS", "AAPL")
-        period: Period to fetch data for (e.g., "1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max")
-        interval: Data interval (e.g., "1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo")
-
-    Returns:
-        List of StockData dictionaries
-    """
+    
     def _fetch_data():
         from yahooquery import Ticker
         ticker = Ticker(symbol)
@@ -109,17 +81,7 @@ def get_stock_history(
 
 
 def get_fundamentals(symbol: str) -> FundamentalsData:
-    """
-    Fetch fundamental data using Alpha Vantage.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE.NS" - will be converted to NSE equivalent)
-
-    Returns:
-        Dictionary containing fundamental data
-
-    Note: Alpha Vantage works best with US stocks. For NSE stocks, we need to handle the conversion.
-    """
+    
     if not ALPHA_VANTAGE_API_KEY or ALPHA_VANTAGE_API_KEY == "YOUR_ALPHA_VANTAGE_KEY_HERE":
         logger.warning("Alpha Vantage API key not configured. Skipping fundamentals fetch.")
         return {"error": "API key not configured"}
@@ -180,15 +142,7 @@ def get_fundamentals(symbol: str) -> FundamentalsData:
 
 
 def get_stock_info(symbol: str) -> Dict[str, Any]:
-    """
-    Get basic stock information from yfinance.
-
-    Args:
-        symbol: Stock symbol
-
-    Returns:
-        Dictionary with basic stock information
-    """
+    
     def _fetch_info():
         from yahooquery import Ticker
         ticker = Ticker(symbol)
@@ -222,16 +176,7 @@ def get_stock_info(symbol: str) -> Dict[str, Any]:
 
 
 def get_news_articles(symbol: str, max_articles: int = 10) -> List[Dict[str, Any]]:
-    """
-    Fetch news articles for a stock symbol using NewsAPI.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE.NS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of news article dictionaries
-    """
+    
     if not NEWS_API_KEY or NEWS_API_KEY == "":
         logger.warning("NewsAPI key not configured. Skipping news fetch.")
         return []
@@ -280,12 +225,7 @@ def get_news_articles(symbol: str, max_articles: int = 10) -> List[Dict[str, Any
 
 
 def get_fred_macro_data() -> Dict[str, Dict[str, Any]]:
-    """
-    Fetch macroeconomic data from FRED API.
-
-    Returns:
-        Dict of macro indicators
-    """
+    
     if not FRED_API_KEY or FRED_API_KEY == "":
         logger.warning("FRED API key not configured. Skipping FRED macro data fetch.")
         return {}
@@ -351,12 +291,7 @@ def get_fred_macro_data() -> Dict[str, Dict[str, Any]]:
 
 
 def get_macro_data() -> Dict[str, Dict[str, Any]]:
-    """
-    Fetch latest macroeconomic indicators from free web sources.
-
-    Returns:
-        Dict of macro indicators like {'FEDFUNDS': {'value': 5.33, 'date': '2024-08-01'}, ...}
-    """
+    
     logger.info("Fetching macro data from free APIs and web sources")
 
     macro_data = {}

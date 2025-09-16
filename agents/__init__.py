@@ -1,6 +1,4 @@
-"""
-Trading agents for stock analysis and decision making.
-"""
+
 
 from .data_fetcher import data_fetcher_agent
 from .technical_analysis import technical_analysis_agent

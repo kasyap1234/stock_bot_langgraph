@@ -1,6 +1,4 @@
-"""
-Data models and state management for stock bot - JSON/dict based structures for stock data and LangGraph state.
-"""
+
 
 from typing import Any, Dict, List, Optional, Union, Annotated
 from datetime import datetime
@@ -8,7 +6,6 @@ from datetime import datetime
 from typing_extensions import TypedDict as ExtTypedDict
 
 
-# StockData structure for OHLCV data
 StockData = Dict[
     str,  # key
     Union[
@@ -19,17 +16,13 @@ StockData = Dict[
     ]
 ]
 
-# Historical data structure (list of StockData)
 HistoricalData = List[StockData]
 
-# Fundamentals data structure
 FundamentalsData = Dict[str, Union[str, float, int, Dict]]
 
-# News data structure
 NewsItem = Dict[str, Union[str, datetime]]
 NewsData = List[NewsItem]
 
-# Complete data structure combining all data types
 CompleteStockData = Dict[str, Dict[str, Union[HistoricalData, FundamentalsData, NewsData]]]
 
 
@@ -43,22 +36,7 @@ def create_stock_data(
     volume: int,
     **additional_fields
 ) -> StockData:
-    """
-    Create a StockData dictionary with the standard OHLCV format.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE.NS")
-        date: Date in YYYY-MM-DD format
-        open_price: Opening price
-        high: High price
-        low: Low price
-        close: Closing price
-        volume: Trading volume
-        **additional_fields: Any additional data fields
-
-    Returns:
-        StockData dictionary
-    """
+    
     stock_data = {
         "symbol": symbol,
         "date": date,
@@ -82,19 +60,7 @@ def create_news_item(
     source: str,
     summary: Optional[str] = None
 ) -> NewsItem:
-    """
-    Create a NewsItem dictionary.
-
-    Args:
-        title: News headline/title
-        url: Source URL
-        published_date: Publication date
-        source: News source
-        summary: Brief summary (optional)
-
-    Returns:
-        NewsItem dictionary
-    """
+    
     news_item = {
         "title": title,
         "url": url,
@@ -109,15 +75,7 @@ def create_news_item(
 
 
 def validate_stock_data(stock_data: StockData) -> bool:
-    """
-    Validate that a StockData dictionary has all required fields.
-
-    Args:
-        stock_data: StockData dictionary to validate
-
-    Returns:
-        True if valid, False otherwise
-    """
+    
     required_fields = ["symbol", "date", "open", "high", "low", "close", "volume"]
 
     for field in required_fields:
@@ -134,7 +92,7 @@ def validate_stock_data(stock_data: StockData) -> bool:
 
 
 def merge_analysis_dicts(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
-    """Merge two analysis dicts for the same symbol."""
+    
     result = a.copy() if a else {}
     if b:
         for symbol, data in b.items():
@@ -149,9 +107,8 @@ def merge_analysis_dicts(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]
     return result
 
 
-# LangGraph State class for the trading bot workflow
 class State(ExtTypedDict):
-    """State definition for LangGraph workflow"""
+    
     stock_data: Dict[str, Any]
     technical_signals: Annotated[Dict[str, Dict[str, str]], merge_analysis_dicts]
     fundamental_analysis: Annotated[Dict[str, Dict[str, Union[float, str]]], merge_analysis_dicts]

@@ -1,7 +1,4 @@
-"""
-Trading Dashboard - FastAPI Backend
-Real-time monitoring and control interface for automated trading system.
-"""
+
 
 import asyncio
 import json
@@ -29,19 +26,15 @@ from simulation import run_trading_simulation
 from analysis import PerformanceAnalyzer
 from utils import setup_logging
 
-# Setup logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Login manager
 SECRET_KEY = "your-secret-key-change-in-production"  # TODO: Move to config
 login_manager = LoginManager(SECRET_KEY, token_url="/auth/token", use_cookie=True)
 login_manager.cookie_name = "trading_dashboard_auth"
 
-# In-memory user store (replace with database in production)
 fake_users_db = {
     "admin": {
         "username": "admin",
@@ -64,7 +57,6 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
-# WebSocket connection manager
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
@@ -100,7 +92,6 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# Global state for dashboard data
 dashboard_state = {
     "portfolio": {},
     "strategies": {},
@@ -110,7 +101,6 @@ dashboard_state = {
     "last_update": None
 }
 
-# Lifespan context manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -121,7 +111,6 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down Trading Dashboard")
 
-# Create FastAPI app
 app = FastAPI(
     title="Trading Dashboard",
     description="Real-time monitoring and control interface for automated trading system",
@@ -129,7 +118,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # TODO: Configure properly for production
@@ -138,13 +126,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files
 app.mount("/static", StaticFiles(directory="dashboard/static"), name="static")
 
-# Templates
 templates = Jinja2Templates(directory="dashboard/templates")
 
-# Auth functions
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
@@ -169,7 +154,6 @@ def load_user(username: str):
     user = get_user(fake_users_db, username)
     return user
 
-# Routes
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, user=Depends(login_manager.optional)):
     if not user:
@@ -204,7 +188,6 @@ async def logout():
     login_manager.set_cookie(response, "")
     return response
 
-# API Routes
 @app.get("/api/portfolio")
 async def get_portfolio(user=Depends(login_manager)):
     return dashboard_state["portfolio"]
@@ -267,7 +250,6 @@ async def run_backtest(request: Request, user=Depends(login_manager)):
         logger.error(f"Backtest failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# WebSocket endpoint
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
     await manager.connect(websocket, client_id)
@@ -279,9 +261,8 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
     except WebSocketDisconnect:
         manager.disconnect(websocket, client_id)
 
-# Background tasks
 async def update_dashboard_data():
-    """Background task to update dashboard data periodically."""
+    
     while True:
         try:
             # Update market data
@@ -311,7 +292,7 @@ async def update_dashboard_data():
         await asyncio.sleep(60)  # Update every minute
 
 def update_dashboard_from_analysis(final_state: State):
-    """Update dashboard state from analysis results."""
+    
     # Update portfolio
     dashboard_state["portfolio"] = final_state.get("simulation_results", {})
 
@@ -322,7 +303,7 @@ def update_dashboard_from_analysis(final_state: State):
     dashboard_state["risk_metrics"] = final_state.get("risk_metrics", {})
 
 def check_alerts() -> List[Dict]:
-    """Check for trading alerts based on current data."""
+    
     alerts = []
 
     # Check portfolio drawdown

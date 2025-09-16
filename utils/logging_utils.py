@@ -1,7 +1,4 @@
-"""
-Logging utilities for the stock trading bot.
-Provides centralized logging configuration and utility functions.
-"""
+
 
 import logging
 import logging.handlers
@@ -19,16 +16,7 @@ def setup_logging(
     max_bytes: int = 10 * 1024 * 1024,  # 10MB
     backup_count: int = 5
 ) -> None:
-    """
-    Setup comprehensive logging configuration.
-
-    Args:
-        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_format: Log message format
-        log_file: Path to log file (creates directory if needed)
-        max_bytes: Maximum log file size in bytes
-        backup_count: Number of backup log files to keep
-    """
+    
     # Create logger
     logger = logging.getLogger()
     logger.setLevel(getattr(logging, log_level.upper()))
@@ -74,20 +62,12 @@ def setup_logging(
 
 
 def get_logger(name: str) -> logging.Logger:
-    """
-    Get a logger instance with the specified name.
-
-    Args:
-        name: Logger name (usually __name__)
-
-    Returns:
-        Configured logger instance
-    """
+    
     return logging.getLogger(name)
 
 
 class LogContextManager:
-    """Context manager for adding context to log messages."""
+    
 
     def __init__(self, logger: logging.Logger, context: Dict[str, Any]):
         self.logger = logger
@@ -105,12 +85,7 @@ class LogContextManager:
 
 
 def log_function_call(logger: Optional[logging.Logger] = None):
-    """
-    Decorator to log function entry and exit.
-
-    Args:
-        logger: Logger to use (defaults to function module logger)
-    """
+    
     def decorator(func):
         def wrapper(*args, **kwargs):
             nonlocal logger
@@ -130,13 +105,7 @@ def log_function_call(logger: Optional[logging.Logger] = None):
 
 
 def log_performance(logger: logging.Logger, threshold_ms: float = 1000):
-    """
-    Decorator to log function performance.
-
-    Args:
-        logger: Logger to use
-        threshold_ms: Log warning if execution exceeds this time (milliseconds)
-    """
+    
     import time
 
     def decorator(func):

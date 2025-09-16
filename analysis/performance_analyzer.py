@@ -1,6 +1,4 @@
-"""
-Performance analysis utilities for trading strategies and portfolio metrics.
-"""
+
 
 import logging
 from typing import Dict, List, Any, Optional, Tuple
@@ -14,32 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 class PerformanceAnalyzer:
-    """
-    Comprehensive performance analyzer for trading strategies.
-    Calculates various risk and return metrics.
-    """
+    
 
     def __init__(self, risk_free_rate: float = 0.065, target_return: float = 0.0):
-        """
-        Initialize performance analyzer.
-
-        Args:
-            risk_free_rate: Annual risk-free rate (default 6.5% for India)
-            target_return: Target annual return for comparison
-        """
+        
         self.risk_free_rate = risk_free_rate
         self.target_return = target_return
 
     def analyze_strategy_performance(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Analyze comprehensive strategy performance metrics.
-
-        Args:
-            backtest_results: Results from backtest simulation
-
-        Returns:
-            Dictionary with detailed performance analysis
-        """
+        
         if "error" in backtest_results:
             return {"error": "Cannot analyze performance with invalid backtest data"}
 
@@ -69,7 +50,7 @@ class PerformanceAnalyzer:
             return {"error": str(e)}
 
     def _calculate_basic_metrics(self, results: Dict[str, Any]) -> Dict[str, Any]:
-        """Calculate basic performance metrics."""
+        
         return {
             "total_return": results.get("total_return", 0),
             "annualized_return": results.get("annualized_return", 0),
@@ -83,7 +64,7 @@ class PerformanceAnalyzer:
         }
 
     def _calculate_risk_metrics(self, results: Dict[str, Any]) -> Dict[str, Any]:
-        """Calculate comprehensive risk metrics."""
+        
         portfolio_history = results.get("portfolio_history", [])
         if not portfolio_history:
             return {"error": "No portfolio history available"}
@@ -125,7 +106,7 @@ class PerformanceAnalyzer:
         }
 
     def _calculate_return_metrics(self, results: Dict[str, Any]) -> Dict[str, Any]:
-        """Calculate return-based metrics."""
+        
         portfolio_history = results.get("portfolio_history", [])
         if not portfolio_history:
             return {"error": "No portfolio history available"}
@@ -165,7 +146,7 @@ class PerformanceAnalyzer:
         }
 
     def _calculate_period_return(self, daily_returns: List[float], period_days: int, worst: bool = False) -> float:
-        """Calculate best/worst return for a given period."""
+        
         if len(daily_returns) < period_days:
             return 0
 
@@ -180,7 +161,7 @@ class PerformanceAnalyzer:
             return max(period_returns) if period_returns else 0
 
     def _calculate_recovery_time(self, cumulative_returns: List[float]) -> int:
-        """Calculate time needed to recover from drawdowns."""
+        
         if not cumulative_returns.any():
             return 0
 
@@ -203,7 +184,7 @@ class PerformanceAnalyzer:
         return max_recovery_time
 
     def _calculate_risk_adjusted_metrics(self, results: Dict[str, Any]) -> Dict[str, Any]:
-        """Calculate risk-adjusted performance metrics."""
+        
         total_return = results.get("total_return", 0)
         volatility = results.get("volatility", 0)
         max_drawdown = results.get("max_drawdown", 0)
@@ -236,7 +217,7 @@ class PerformanceAnalyzer:
         }
 
     def _calculate_omega_ratio(self, returns: List[float], threshold: float = 0) -> float:
-        """Calculate Omega ratio."""
+        
         if len(returns) == 0:
             return 0
 
@@ -246,7 +227,7 @@ class PerformanceAnalyzer:
         return gains / losses if losses > 0 else 0
 
     def _generate_performance_rating(self, analysis: Dict[str, Any]) -> str:
-        """Generate overall performance rating."""
+        
         try:
             basic = analysis.get("basic_metrics", {})
             risk_adj = analysis.get("risk_adjusted_metrics", {})
@@ -290,7 +271,7 @@ class PerformanceAnalyzer:
             return "Unable to Rate"
 
     def _generate_performance_insights(self, analysis: Dict[str, Any]) -> List[str]:
-        """Generate actionable insights from performance analysis."""
+        
         insights = []
 
         try:
@@ -348,15 +329,7 @@ class PerformanceAnalyzer:
 
 
 def compare_strategies(strategy_results: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Compare multiple trading strategies.
-
-    Args:
-        strategy_results: List of backtest results for different strategies
-
-    Returns:
-        Comparison analysis
-    """
+    
     if len(strategy_results) < 2:
         return {"error": "Need at least 2 strategies for comparison"}
 

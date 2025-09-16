@@ -1,8 +1,4 @@
-"""
-Advanced Machine Learning Models for Stock Prediction.
-Implements ensemble methods, neural networks, and advanced ML techniques
-for enhanced stock price prediction accuracy.
-"""
+
 
 import logging
 import pandas as pd
@@ -61,12 +57,11 @@ except ImportError:
 from config.config import MODEL_DIR
 from data.models import State
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 
 class TimeSeriesCrossValidator:
-    """Time series cross-validation for financial data."""
+    
 
     def __init__(self, n_splits: int = 5, test_size: int = 30, gap: int = 1):
         self.n_splits = n_splits
@@ -74,7 +69,7 @@ class TimeSeriesCrossValidator:
         self.gap = gap
 
     def split(self, X: pd.DataFrame) -> List[Tuple[np.ndarray, np.ndarray]]:
-        """Generate time series train/test splits."""
+        
         splits = []
         n_samples = len(X)
 
@@ -95,7 +90,7 @@ class TimeSeriesCrossValidator:
         return splits
 
     def get_cv_splits(self, X: pd.DataFrame, y: pd.Series) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
-        """Get train/test splits with data."""
+        
         splits = []
         for train_idx, test_idx in self.split(X):
             X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
@@ -105,7 +100,7 @@ class TimeSeriesCrossValidator:
 
 
 class EnsembleModelTrainer:
-    """Trainer for ensemble machine learning models."""
+    
 
     def __init__(self, model_dir: str = MODEL_DIR):
         self.model_dir = Path(model_dir)
@@ -201,7 +196,7 @@ class EnsembleModelTrainer:
                           optimize_hyperparams: bool = True,
                           feature_selection_method: str = 'combined',
                           use_advanced_features: bool = False) -> Dict[str, Any]:
-        """Train a single model with optional hyperparameter optimization."""
+        
         if model_name not in self.model_configs:
             raise ValueError(f"Model {model_name} not supported")
 
@@ -260,7 +255,7 @@ class EnsembleModelTrainer:
         return results
 
     def _select_features(self, X: pd.DataFrame, y: pd.Series, method: str = 'rf_importance') -> Any:
-        """Perform advanced feature selection using multiple techniques."""
+        
         if method == 'rf_importance':
             # Random Forest feature importance
             selector_model = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
@@ -360,14 +355,14 @@ class EnsembleModelTrainer:
 
     def _optimize_hyperparameters(self, model, param_grid: Dict, X: np.ndarray, y: np.ndarray,
                                 use_bayesian: bool = True) -> Tuple[Any, Dict, Dict]:
-        """Optimize hyperparameters using Bayesian optimization or grid search."""
+        
         if use_bayesian and OPTUNA_AVAILABLE:
             return self._bayesian_optimization(model, param_grid, X, y)
         else:
             return self._grid_search_optimization(model, param_grid, X, y)
 
     def _bayesian_optimization(self, model, param_grid: Dict, X: np.ndarray, y: np.ndarray) -> Tuple[Any, Dict, Dict]:
-        """Optimize hyperparameters using Bayesian optimization with Optuna."""
+        
         def objective(trial):
             # Suggest hyperparameters based on model type
             if hasattr(model, 'n_estimators'):  # Tree-based models
@@ -450,7 +445,7 @@ class EnsembleModelTrainer:
         return best_model, best_params, evaluation
 
     def _grid_search_optimization(self, model, param_grid: Dict, X: np.ndarray, y: np.ndarray) -> Tuple[Any, Dict, Dict]:
-        """Fallback to grid search optimization."""
+        
         # Use RandomizedSearchCV for efficiency
         search_cv = RandomizedSearchCV(
             model, param_grid,
@@ -466,7 +461,7 @@ class EnsembleModelTrainer:
         return search_cv.best_estimator_, search_cv.best_params_, self._evaluate_model(search_cv.best_estimator_, X, y)
 
     def _evaluate_model(self, model, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
-        """Evaluate model performance using time series cross-validation."""
+        
         cv_splits = self.cv.get_cv_splits(pd.DataFrame(X), pd.Series(y))
 
         scores = {
@@ -503,7 +498,7 @@ class EnsembleModelTrainer:
         return results
 
     def _get_feature_importance(self, model, feature_names: List[str]) -> Dict[str, float]:
-        """Extract feature importance from trained model."""
+        
         importance_dict = {}
 
         if hasattr(model, 'feature_importances_'):
@@ -519,7 +514,7 @@ class EnsembleModelTrainer:
         return importance_dict
 
     def predict_with_models(self, model_names: List[str], X: pd.DataFrame) -> Dict[str, np.ndarray]:
-        """Make predictions with multiple models."""
+        
         predictions = {}
 
         for name in model_names:
@@ -542,7 +537,7 @@ class EnsembleModelTrainer:
         return predictions
 
     def save_models(self, symbol: str):
-        """Save trained models to disk."""
+        
         symbol_dir = self.model_dir / symbol
         symbol_dir.mkdir(exist_ok=True)
 
@@ -561,7 +556,7 @@ class EnsembleModelTrainer:
         logger.info(f"Saved models for {symbol}")
 
     def load_models(self, symbol: str) -> bool:
-        """Load trained models from disk."""
+        
         symbol_dir = self.model_dir / symbol
 
         if not symbol_dir.exists():
@@ -587,7 +582,7 @@ class EnsembleModelTrainer:
 
     def calibrate_model(self, model, X: pd.DataFrame, y: pd.Series,
                        method: str = 'isotonic') -> CalibratedClassifierCV:
-        """Calibrate model probabilities for better confidence scores."""
+        
         if not hasattr(model, 'predict_proba'):
             logger.warning("Model does not support probability prediction, skipping calibration")
             return model
@@ -605,7 +600,7 @@ class EnsembleModelTrainer:
 
     def create_calibrated_ensemble(self, X: pd.DataFrame, y: pd.Series,
                                   model_names: List[str] = None) -> Dict[str, Any]:
-        """Create calibrated ensemble models."""
+        
         if model_names is None:
             model_names = ['random_forest', 'gradient_boosting']
             if XGBOOST_AVAILABLE:
@@ -640,7 +635,7 @@ class EnsembleModelTrainer:
 
 
 class NeuralArchitectureSearch:
-    """Basic Neural Architecture Search for financial time series."""
+    
 
     def __init__(self):
         self.search_space = {
@@ -652,7 +647,7 @@ class NeuralArchitectureSearch:
         }
 
     def create_neural_network(self, architecture: Dict[str, Any]) -> Any:
-        """Create a neural network based on architecture specification."""
+        
         try:
             from tensorflow.keras.models import Sequential
             from tensorflow.keras.layers import Dense, Dropout, LSTM, Bidirectional
@@ -685,7 +680,7 @@ class NeuralArchitectureSearch:
 
     def search_architectures(self, X: pd.DataFrame, y: pd.Series,
                            n_trials: int = 10) -> Dict[str, Any]:
-        """Search for optimal neural network architectures."""
+        
         if not OPTUNA_AVAILABLE:
             logger.warning("Optuna not available for architecture search")
             return {}
@@ -739,14 +734,14 @@ class NeuralArchitectureSearch:
 
 
 class TransferLearningModel:
-    """Transfer learning for financial time series using pre-trained models."""
+    
 
     def __init__(self):
         self.pretrained_models = {}
 
     def adapt_pretrained_model(self, base_model, target_data: pd.DataFrame,
                               source_domain: str = 'general') -> Any:
-        """Adapt a pre-trained model to financial time series domain."""
+        
         try:
             # Fine-tune the last few layers for the target domain
             for layer in base_model.layers[:-2]:  # Freeze all but last 2 layers
@@ -776,7 +771,7 @@ class TransferLearningModel:
             return None
 
     def create_domain_adapted_model(self, X: pd.DataFrame, y: pd.Series) -> Any:
-        """Create a domain-adapted model for financial time series."""
+        
         try:
             from tensorflow.keras.applications import MobileNetV2
             from tensorflow.keras.models import Model
@@ -810,14 +805,14 @@ class TransferLearningModel:
 
 
 class MetaLearningModel:
-    """Meta-learning approaches for financial time series."""
+    
 
     def __init__(self):
         self.base_models = {}
         self.meta_learner = None
 
     def create_meta_features(self, model_predictions: Dict[str, np.ndarray]) -> pd.DataFrame:
-        """Create meta-features from base model predictions."""
+        
         meta_features = pd.DataFrame()
 
         for model_name, predictions in model_predictions.items():
@@ -837,7 +832,7 @@ class MetaLearningModel:
 
     def train_meta_learner(self, X: pd.DataFrame, y: pd.Series,
                           base_model_predictions: Dict[str, Any]) -> Any:
-        """Train a meta-learner using base model predictions."""
+        
         meta_features = self.create_meta_features(base_model_predictions)
 
         if meta_features.empty:
@@ -864,7 +859,7 @@ class MetaLearningModel:
 
     def predict_with_meta_learner(self, X: pd.DataFrame,
                                 base_model_predictions: Dict[str, Any]) -> np.ndarray:
-        """Make predictions using the trained meta-learner."""
+        
         if self.meta_learner is None:
             logger.warning("Meta-learner not trained")
             return np.array([])
@@ -876,20 +871,20 @@ class MetaLearningModel:
 
 
 class AdvancedRegularization:
-    """Advanced regularization techniques for ML models."""
+    
 
     def __init__(self):
         self.regularization_params = {}
 
     def apply_l1_regularization(self, model, alpha: float = 0.01):
-        """Apply L1 regularization (Lasso) to linear models."""
+        
         if hasattr(model, 'C'):
             # For models with C parameter (like LogisticRegression, SVC)
             model.C = 1.0 / (2 * alpha)  # Convert alpha to C
         return model
 
     def apply_l2_regularization(self, model, alpha: float = 0.01):
-        """Apply L2 regularization (Ridge) to linear models."""
+        
         if hasattr(model, 'C'):
             model.C = 1.0 / (2 * alpha)
         elif hasattr(model, 'alpha'):
@@ -898,7 +893,7 @@ class AdvancedRegularization:
         return model
 
     def apply_elastic_net(self, model, alpha: float = 0.01, l1_ratio: float = 0.5):
-        """Apply Elastic Net regularization."""
+        
         if hasattr(model, 'C'):
             model.C = 1.0 / (2 * alpha)
         if hasattr(model, 'l1_ratio'):
@@ -909,7 +904,7 @@ class AdvancedRegularization:
                                 min_samples_split: int = 10,
                                 min_samples_leaf: int = 5,
                                 max_features: str = 'sqrt'):
-        """Apply regularization to tree-based models."""
+        
         if hasattr(model, 'max_depth'):
             model.max_depth = max_depth
         if hasattr(model, 'min_samples_split'):
@@ -924,7 +919,7 @@ class AdvancedRegularization:
                                     subsample: float = 0.8,
                                     reg_alpha: float = 0.1,
                                     reg_lambda: float = 1.0):
-        """Apply regularization to boosting models."""
+        
         if hasattr(model, 'learning_rate'):
             model.learning_rate = learning_rate
         if hasattr(model, 'subsample'):
@@ -937,7 +932,7 @@ class AdvancedRegularization:
 
     def apply_early_stopping(self, model, X_train, y_train, X_val, y_val,
                            patience: int = 10, min_delta: float = 0.001):
-        """Apply early stopping to prevent overfitting."""
+        
         best_score = -np.inf
         patience_counter = 0
         best_model = None
@@ -983,7 +978,7 @@ class AdvancedRegularization:
 
     def apply_regularization_pipeline(self, model, X_train, y_train, X_val=None, y_val=None,
                                     regularization_type: str = 'auto'):
-        """Apply a complete regularization pipeline."""
+        
         if regularization_type == 'auto':
             # Auto-detect model type and apply appropriate regularization
             if hasattr(model, 'C'):  # Linear models
@@ -1012,13 +1007,13 @@ class AdvancedRegularization:
 
 
 class ModelCompression:
-    """Model compression techniques for reducing model size and improving inference speed."""
+    
 
     def __init__(self):
         self.compressed_models = {}
 
     def quantize_model(self, model, bits: int = 8, method: str = 'uniform') -> Any:
-        """Quantize model weights to reduce precision."""
+        
         try:
             if hasattr(model, 'feature_importances_'):  # Tree-based models
                 return self._quantize_tree_model(model, bits, method)
@@ -1034,7 +1029,7 @@ class ModelCompression:
             return model
 
     def _quantize_tree_model(self, model, bits: int, method: str) -> Any:
-        """Quantize tree-based model parameters."""
+        
         try:
             from sklearn.base import BaseEstimator, ClassifierMixin
             import copy
@@ -1064,7 +1059,7 @@ class ModelCompression:
             return model
 
     def _quantize_linear_model(self, model, bits: int, method: str) -> Any:
-        """Quantize linear model coefficients."""
+        
         try:
             from sklearn.base import BaseEstimator, ClassifierMixin
             import copy
@@ -1080,7 +1075,7 @@ class ModelCompression:
                     self.zero_points = {}
 
                 def _quantize_weights(self, weights):
-                    """Quantize weight matrix."""
+                    
                     if method == 'uniform':
                         # Uniform quantization
                         min_val, max_val = np.min(weights), np.max(weights)
@@ -1164,13 +1159,13 @@ class ModelCompression:
             return model
 
     def _quantize_general_model(self, model, bits: int, method: str) -> Any:
-        """General quantization for unsupported model types."""
+        
         # For now, return the original model
         logger.info(f"General quantization applied to {type(model).__name__}")
         return model
 
     def prune_model(self, model, pruning_rate: float = 0.2, method: str = 'weight') -> Any:
-        """Prune model weights to reduce complexity."""
+        
         try:
             if hasattr(model, 'feature_importances_'):  # Tree-based models
                 return self._prune_tree_model(model, pruning_rate, method)
@@ -1184,7 +1179,7 @@ class ModelCompression:
             return model
 
     def _prune_tree_model(self, model, pruning_rate: float, method: str) -> Any:
-        """Prune tree-based model."""
+        
         try:
             from sklearn.base import BaseEstimator, ClassifierMixin
             import copy
@@ -1223,7 +1218,7 @@ class ModelCompression:
             return model
 
     def _prune_linear_model(self, model, pruning_rate: float, method: str) -> Any:
-        """Prune linear model weights."""
+        
         try:
             from sklearn.base import BaseEstimator, ClassifierMixin
             import copy
@@ -1274,7 +1269,7 @@ class ModelCompression:
 
     def distill_knowledge(self, teacher_model, student_model, X: pd.DataFrame, y: pd.Series,
                          temperature: float = 2.0, alpha: float = 0.5) -> Any:
-        """Perform knowledge distillation from teacher to student model."""
+        
         try:
             from sklearn.base import BaseEstimator, ClassifierMixin
             import copy
@@ -1289,7 +1284,7 @@ class ModelCompression:
                     self.distilled = False
 
                 def _soft_targets(self, model, X, temperature):
-                    """Get soft targets from model."""
+                    
                     if hasattr(model, 'predict_proba'):
                         probs = model.predict_proba(X)
                         # Apply temperature scaling
@@ -1299,7 +1294,7 @@ class ModelCompression:
                         return None
 
                 def _distillation_loss(self, y_true, y_pred_soft, y_pred_hard, temperature, alpha):
-                    """Compute distillation loss."""
+                    
                     # Hard loss (cross-entropy with true labels)
                     hard_loss = -np.mean(np.sum(y_true * np.log(y_pred_hard + 1e-10), axis=1))
 
@@ -1340,7 +1335,7 @@ class ModelCompression:
 
     def compress_model(self, model, compression_type: str = 'quantization',
                       compression_params: Dict[str, Any] = None) -> Any:
-        """Apply model compression based on type."""
+        
         if compression_params is None:
             compression_params = {}
 
@@ -1374,7 +1369,7 @@ class ModelCompression:
             return model
 
     def get_compression_stats(self, original_model, compressed_model) -> Dict[str, Any]:
-        """Get compression statistics."""
+        
         stats = {
             'original_model_type': type(original_model).__name__,
             'compressed_model_type': type(compressed_model).__name__,
@@ -1411,7 +1406,7 @@ class ModelCompression:
 
 
 class ModelEvaluator:
-        """Extract feature importance from trained model."""
+        
         importance_dict = {}
 
         if hasattr(model, 'feature_importances_'):
@@ -1427,7 +1422,7 @@ class ModelEvaluator:
         return importance_dict
 
     def create_ensemble_model(self, model_names: List[str], X: pd.DataFrame, y: pd.Series) -> VotingClassifier:
-        """Create an ensemble model from multiple trained models."""
+        
         estimators = []
 
         for name in model_names:
@@ -1445,7 +1440,7 @@ class ModelEvaluator:
         return ensemble
 
     def create_stacking_ensemble(self, model_names: List[str], X: pd.DataFrame, y: pd.Series) -> Any:
-        """Create a stacking ensemble with meta-learner."""
+        
         from sklearn.ensemble import StackingClassifier
 
         base_estimators = []
@@ -1473,7 +1468,7 @@ class ModelEvaluator:
         return stacking_clf
 
     def create_bagging_ensemble(self, base_model_name: str, X: pd.DataFrame, y: pd.Series) -> BaggingClassifier:
-        """Create a bagging ensemble for a specific base model."""
+        
         if base_model_name not in self.model_configs:
             raise ValueError(f"Base model {base_model_name} not supported")
 
@@ -1495,7 +1490,7 @@ class ModelEvaluator:
 
     def create_advanced_ensemble(self, X: pd.DataFrame, y: pd.Series,
                                ensemble_type: str = 'voting') -> Dict[str, Any]:
-        """Create advanced ensemble with multiple techniques."""
+        
         results = {}
 
         # Train base models
@@ -1552,7 +1547,7 @@ class ModelEvaluator:
         return results
 
     def predict_with_models(self, model_names: List[str], X: pd.DataFrame) -> Dict[str, np.ndarray]:
-        """Make predictions with multiple models."""
+        
         predictions = {}
 
         for name in model_names:
@@ -1575,7 +1570,7 @@ class ModelEvaluator:
         return predictions
 
     def save_models(self, symbol: str):
-        """Save trained models to disk."""
+        
         symbol_dir = self.model_dir / symbol
         symbol_dir.mkdir(exist_ok=True)
 
@@ -1594,7 +1589,7 @@ class ModelEvaluator:
         logger.info(f"Saved models for {symbol}")
 
     def load_models(self, symbol: str) -> bool:
-        """Load trained models from disk."""
+        
         symbol_dir = self.model_dir / symbol
 
         if not symbol_dir.exists():
@@ -1620,14 +1615,14 @@ class ModelEvaluator:
 
 
 class ModelEvaluator:
-    """Comprehensive model evaluation and comparison."""
+    
 
     def __init__(self):
         self.metrics = {}
 
     def evaluate_predictions(self, y_true: np.ndarray, y_pred: np.ndarray,
                            y_pred_proba: Optional[np.ndarray] = None) -> Dict[str, float]:
-        """Evaluate prediction performance."""
+        
         metrics = {
             'accuracy': accuracy_score(y_true, y_pred),
             'precision': precision_score(y_true, y_pred, zero_division=0),
@@ -1641,7 +1636,7 @@ class ModelEvaluator:
         return metrics
 
     def compare_models(self, model_results: Dict[str, Dict]) -> pd.DataFrame:
-        """Compare performance of different models."""
+        
         comparison = {}
 
         for model_name, results in model_results.items():
@@ -1656,7 +1651,7 @@ class ModelEvaluator:
         return pd.DataFrame(comparison).T
 
     def calculate_confidence_score(self, predictions: Dict[str, Dict]) -> float:
-        """Calculate confidence score from ensemble predictions."""
+        
         if not predictions:
             return 0.5
 
@@ -1689,7 +1684,7 @@ class ModelEvaluator:
 
 
 class AdvancedMLPredictor:
-    """Main class for advanced ML predictions."""
+    
 
     def __init__(self):
         self.trainer = EnsembleModelTrainer()
@@ -1699,7 +1694,7 @@ class AdvancedMLPredictor:
     def train_ensemble_models(self, X: pd.DataFrame, y: pd.Series,
                              model_names: List[str] = None,
                              use_advanced_features: bool = True) -> Dict[str, Any]:
-        """Train multiple ensemble models with advanced techniques."""
+        
         if model_names is None:
             model_names = ['random_forest', 'gradient_boosting']
             if XGBOOST_AVAILABLE:
@@ -1758,7 +1753,7 @@ class AdvancedMLPredictor:
         return results
 
     def predict_with_confidence(self, X: pd.DataFrame, model_names: List[str] = None) -> Dict[str, Any]:
-        """Make predictions with confidence scoring."""
+        
         if model_names is None:
             model_names = list(self.trainer.models.keys())
 
@@ -1788,20 +1783,12 @@ class AdvancedMLPredictor:
         }
 
     def get_model_comparison(self, trained_results: Dict) -> pd.DataFrame:
-        """Get model performance comparison."""
+        
         return self.evaluator.compare_models(trained_results)
 
 
 def advanced_ml_agent(state: State) -> State:
-    """
-    Advanced ML agent for ensemble model training and prediction.
-
-    Args:
-        state: Current workflow state
-
-    Returns:
-        Updated state with ML predictions
-    """
+    
     logging.info("Starting advanced ML agent")
 
     engineered_features = state.get("engineered_features", {})

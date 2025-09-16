@@ -1,7 +1,4 @@
-"""
-Sentiment analysis agent for stock data.
-Analyzes news and social media sentiment using web scraping and NLP.
-"""
+
 
 import logging
 from functools import lru_cache
@@ -11,7 +8,6 @@ from config.config import DEFAULT_STOCKS, TWITTER_BEARER_TOKEN
 from data.models import State
 from data.apis import get_news_articles
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 try:
@@ -24,16 +20,7 @@ except ImportError:
 
 @lru_cache(maxsize=128)
 def _get_news_sentiment(symbol: str, max_articles: int = 15) -> Dict[str, float]:
-    """
-    Fetch news and calculate sentiment scores.
-
-    Args:
-        symbol: Stock symbol
-        max_articles: Maximum articles to analyze
-
-    Returns:
-        Dictionary with sentiment scores
-    """
+    
     try:
         # Use NewsAPI for news data
         news_data = get_news_articles(symbol, max_articles=max_articles)
@@ -123,15 +110,7 @@ def _get_news_sentiment(symbol: str, max_articles: int = 15) -> Dict[str, float]
 
 
 def _basic_sentiment_analysis(headlines: List[str]) -> Dict[str, float]:
-    """
-    Perform basic sentiment analysis without specialized libraries.
-
-    Args:
-        headlines: List of news headlines
-
-    Returns:
-        Dictionary with basic sentiment scores
-    """
+    
     positive_words = {
         'profit', 'surge', 'rise', 'gain', 'growth', 'up', 'increase', 'boost', 'strong',
         'bull', 'buy', 'rally', 'jump', 'beat', 'exceed', 'positive', 'good', 'excellent'
@@ -173,16 +152,7 @@ def _basic_sentiment_analysis(headlines: List[str]) -> Dict[str, float]:
 
 
 def sentiment_analysis_agent(state: State) -> State:
-    """
-    Sentiment analysis agent for the LangGraph workflow.
-    Analyzes news sentiment and market sentiment indicators.
-
-    Args:
-        state: Current workflow state
-
-    Returns:
-        Updated state with sentiment scores
-    """
+    
     logging.info("Starting sentiment analysis agent")
 
     stock_data = state.get("stock_data", {})
