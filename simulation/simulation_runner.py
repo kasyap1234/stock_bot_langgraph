@@ -244,11 +244,11 @@ def run_trading_simulation(
                 )
                 if 'error' not in period_backtest:
                     period_results.append(period_backtest)
-                    logger.info(f"SimulationActor: Period {i+1} ({period_start.date()} to {period_end.date()}): Sharpe {period_backtest.get('sharpe_ratio', 0):.2f}, Win Rate {period_backtest.get('win_rate', 0):.2%}, Max Drawdown {period_backtest.get('max_drawdown', 0):.2%}")
+                    logger.info(f"SimulationActor: Period {i+1} ({period_start.date()} to {period_end.date()}): Sharpe {period_backtest.get('sharpe_ratio') or 0:.2f}, Win Rate {period_backtest.get('win_rate') or 0:.2%}, Max Drawdown {period_backtest.get('max_drawdown') or 0:.2%}")
         if period_results:
-            avg_sharpe = sum(r.get('sharpe_ratio', 0) for r in period_results) / len(period_results)
-            avg_win = sum(r.get('win_rate', 0) for r in period_results) / len(period_results)
-            avg_drawdown = sum(r.get('max_drawdown', 0) for r in period_results) / len(period_results)
+            avg_sharpe = sum(r.get('sharpe_ratio') or 0 for r in period_results) / len(period_results)
+            avg_win = sum(r.get('win_rate') or 0 for r in period_results) / len(period_results)
+            avg_drawdown = sum(r.get('max_drawdown') or 0 for r in period_results) / len(period_results)
             backtest_results = {
                 **period_results[-1],  # Use last period as base
                 'tuned_rsi_threshold': rsi_buy_threshold,

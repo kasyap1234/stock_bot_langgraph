@@ -154,11 +154,11 @@ class DataQualityValidator:
                 'index': i,
                 'symbol': record.get('symbol'),
                 'date': pd.to_datetime(record.get('date')),
-                'open': record.get('open'),
-                'high': record.get('high'),
-                'low': record.get('low'),
-                'close': record.get('close'),
-                'volume': record.get('volume')
+                'open': record.get('open') or record.get('Open'),
+                'high': record.get('high') or record.get('High'),
+                'low': record.get('low') or record.get('Low'),
+                'close': record.get('close') or record.get('Close'),
+                'volume': record.get('volume') or record.get('Volume')
             })
         
         df = pd.DataFrame(df_data)
@@ -524,19 +524,24 @@ def validate_data(data: HistoricalData, min_periods: int = 50, epsilon: float = 
         InsufficientDataError: If data has fewer than min_periods
         ConstantPriceError: If close prices have std dev < epsilon
     """
-    if data is None or data.empty:
+    if not data:
         raise InsufficientDataError("No data provided")
     
-    if len(data) < min_periods:
-        raise InsufficientDataError(
-            f"Insufficient data: {len(data)} periods, minimum {min_periods} required"
-        )
+    if isinstance(data, list):
+        if len(data) < min_periods:
+            raise InsufficientDataError(
+                f"Insufficient data: {len(data)} periods, minimum {min_periods} required"
+            )
+        validator = DataQualityValidator()
+        df = validator._convert_to_dataframe(data)
+    else:
+        df = data
+        if len(df) < min_periods:
+            raise InsufficientDataError(
+                f"Insufficient data: {len(df)} periods, minimum {min_periods} required"
+            )
     
-    # Convert to DataFrame using existing method
-    validator = DataQualityValidator()
-    df = validator._convert_to_dataframe(data)
-    
-    close_prices = df['close'].dropna()
+    close_prices = df['Close'].dropna() if 'Close' in df.columns else df['close'].dropna()
     
     if len(close_prices) < 2:
         raise InsufficientDataError("Insufficient valid close prices for variation check")

@@ -44,6 +44,7 @@ class FactorAnalysis:
     weight: float  # Dynamic weight for this factor
     data: Dict[str, Any]  # Raw data used for analysis
     reasoning: str  # Brief explanation
+    metadata: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -1142,7 +1143,7 @@ class EnhancedRecommendationEngine:
         momentum_boost = 0.0
         
         # Calculate momentum factors from technical analysis
-        momentum_factors = [f for f in factors if f.factor_type == FactorType.TECHNICAL and 'momentum' in f.metadata]
+        momentum_factors = [f for f in factors if f.factor_type == FactorType.TECHNICAL and f.metadata and 'momentum' in f.metadata]
         if momentum_factors:
             # Average momentum strength
             avg_momentum = sum(f.strength for f in momentum_factors) / len(momentum_factors)
@@ -1158,7 +1159,7 @@ class EnhancedRecommendationEngine:
                     logger.debug(f"Strong momentum boost: +0.08 (momentum: {avg_momentum:.3f})")
         
         # Volume-based momentum confirmation
-        volume_factors = [f for f in factors if f.factor_type == FactorType.TECHNICAL and 'volume' in f.metadata]
+        volume_factors = [f for f in factors if f.factor_type == FactorType.TECHNICAL and f.metadata and 'volume' in f.metadata]
         if volume_factors:
             avg_volume_strength = sum(f.strength for f in volume_factors) / len(volume_factors)
             
@@ -1169,7 +1170,7 @@ class EnhancedRecommendationEngine:
                     logger.debug(f"Volume confirmation boost: +0.05 (volume: {avg_volume_strength:.3f})")
         
         # Trend strength momentum
-        trend_factors = [f for f in factors if f.factor_type == FactorType.TECHNICAL and 'trend' in f.metadata]
+        trend_factors = [f for f in factors if f.factor_type == FactorType.TECHNICAL and f.metadata and 'trend' in f.metadata]
         if trend_factors:
             avg_trend_strength = sum(f.strength for f in trend_factors) / len(trend_factors)
             
@@ -1182,7 +1183,7 @@ class EnhancedRecommendationEngine:
         # Multi-timeframe momentum convergence
         timeframe_momentum = {}
         for factor in factors:
-            if factor.factor_type == FactorType.TECHNICAL and 'timeframe' in factor.metadata:
+            if factor.factor_type == FactorType.TECHNICAL and factor.metadata and 'timeframe' in factor.metadata:
                 timeframe = factor.metadata['timeframe']
                 if timeframe not in timeframe_momentum:
                     timeframe_momentum[timeframe] = []

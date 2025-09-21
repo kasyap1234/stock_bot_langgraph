@@ -63,7 +63,8 @@ def create_initial_state() -> State:
         "performance_analysis": {},
         "failed_stocks": [],
         "data_valid": False,
-        "validation_errors": []
+        "validation_errors": [],
+        "backtest": False
     }
 
 
@@ -91,8 +92,8 @@ def validation_node(state: State) -> Dict[str, Any]:
 
 
 def should_proceed_to_analyses(state: State) -> str:
-    """Conditional router: proceed to analyses if data is valid, else end."""
-    if state.get("data_valid", False):
+    """Conditional router: proceed to analyses if data is valid or backtest enabled, else end."""
+    if state.get("data_valid", False) or state.get("backtest", False):
         return "analyses_hub"
     logger.warning(f"Skipping analyses due to invalid data: {state.get('validation_errors', [])}")
     return END
@@ -241,7 +242,11 @@ def analyses_hub(state: State) -> State:
 def log_technical_analysis(state: State) -> Dict[str, Any]:
     start_time = datetime.datetime.now()
     logger.info(f"Technical analysis started at {start_time}")
-    result = technical_analysis_agent(state)
+    result = {}
+    try:
+        result = technical_analysis_agent(state)
+    except Exception as e:
+        logger.error(f"Technical analysis failed: {e}")
     end_time = datetime.datetime.now()
     logger.info(f"Technical analysis completed at {end_time} (duration: {end_time - start_time})")
     return result
@@ -250,7 +255,11 @@ def log_technical_analysis(state: State) -> Dict[str, Any]:
 def log_fundamental_analysis(state: State) -> Dict[str, Any]:
     start_time = datetime.datetime.now()
     logger.info(f"Fundamental analysis started at {start_time}")
-    result = fundamental_analysis_agent(state)
+    result = {}
+    try:
+        result = fundamental_analysis_agent(state)
+    except Exception as e:
+        logger.error(f"Fundamental analysis failed: {e}")
     end_time = datetime.datetime.now()
     logger.info(f"Fundamental analysis completed at {end_time} (duration: {end_time - start_time})")
     return result
@@ -259,7 +268,11 @@ def log_fundamental_analysis(state: State) -> Dict[str, Any]:
 def log_sentiment_analysis(state: State) -> Dict[str, Any]:
     start_time = datetime.datetime.now()
     logger.info(f"Sentiment analysis started at {start_time}")
-    result = sentiment_analysis_agent(state)
+    result = {}
+    try:
+        result = sentiment_analysis_agent(state)
+    except Exception as e:
+        logger.error(f"Sentiment analysis failed: {e}")
     end_time = datetime.datetime.now()
     logger.info(f"Sentiment analysis completed at {end_time} (duration: {end_time - start_time})")
     return result
@@ -268,7 +281,11 @@ def log_sentiment_analysis(state: State) -> Dict[str, Any]:
 def log_macro_analysis(state: State) -> Dict[str, Any]:
     start_time = datetime.datetime.now()
     logger.info(f"Macro analysis started at {start_time}")
-    result = macro_analysis_agent(state)
+    result = {}
+    try:
+        result = macro_analysis_agent(state)
+    except Exception as e:
+        logger.error(f"Macro analysis failed: {e}")
     end_time = datetime.datetime.now()
     logger.info(f"Macro analysis completed at {end_time} (duration: {end_time - start_time})")
     return result
@@ -341,21 +358,30 @@ def print_walk_forward_results(final_state: State) -> None:
             wf_res = results[symbol]
             oos = wf_res.get('aggregated_oos', {})
             if 'avg_sharpe' in oos:
+                avg_sharpe = oos.get('avg_sharpe', 0.0) or 0.0
+                std_sharpe = oos.get('std_sharpe', 0.0) or 0.0
+                avg_win_rate = oos.get('avg_win_rate', 0.0) or 0.0
+                avg_drawdown = oos.get('avg_drawdown', 0.0) or 0.0
+                avg_returns = oos.get('avg_returns', 0.0) or 0.0
+                total_oos_trades = oos.get('total_oos_trades', 0) or 0
+                target_met = oos.get('oos_win_rate_target_met', False)
                 print(f"\n{symbol} ({wf_res['num_periods']} periods):")
-                print(f"  OOS Avg Sharpe: {oos['avg_sharpe']:.2f} (Std: {oos.get('std_sharpe', 0):.2f})")
-                print(f"  OOS Avg Win Rate: {oos['avg_win_rate']:.1%}")
-                print(f"  OOS Avg Max Drawdown: {oos['avg_drawdown']:.1%}")
-                print(f"  OOS Avg Return: {oos['avg_returns']:.1%}")
-                print(f"  Total OOS Trades: {oos['total_oos_trades']}")
-                print(f"  OOS Win Rate Target (>50%): {'✅' if oos['oos_win_rate_target_met'] else '❌'}")
+                print(f"  OOS Avg Sharpe: {avg_sharpe:.2f} (Std: {std_sharpe:.2f})")
+                print(f"  OOS Avg Win Rate: {avg_win_rate:.1%}")
+                print(f"  OOS Avg Max Drawdown: {avg_drawdown:.1%}")
+                print(f"  OOS Avg Return: {avg_returns:.1%}")
+                print(f"  Total OOS Trades: {total_oos_trades}")
+                print(f"  OOS Win Rate Target (>50%): {'✅' if target_met else '❌'}")
                 
                 # Log sample period details
                 periods = wf_res.get('periods', [])
                 if periods:
                     print("  Sample Periods:")
                     for p in periods[:2]:  # First 2 periods
+                        is_sharpe = p['is_metrics'].get('sharpe', 0.0) or 0.0
+                        oos_sharpe = p['oos_metrics'].get('sharpe', 0.0) or 0.0
                         print(f"    Period {p['period_id']}: IS {p['is_dates']} | OOS {p['oos_dates']} | "
-                              f"IS Sharpe={p['is_metrics']['sharpe']:.2f} | OOS Sharpe={p['oos_metrics']['sharpe']:.2f}")
+                              f"IS Sharpe={is_sharpe:.2f} | OOS Sharpe={oos_sharpe:.2f}")
             else:
                 print(f"{symbol}: No OOS metrics available")
         else:
@@ -398,7 +424,19 @@ def build_workflow_graph(stocks_to_analyze: Optional[list] = None, period: str =
         graph.add_node("fundamental_analysis", log_fundamental_analysis)
         graph.add_node("sentiment_analysis", log_sentiment_analysis)
         graph.add_node("macro_analysis", log_macro_analysis)
-        graph.add_node("risk_assessment", risk_assessment_agent)
+        def log_risk_assessment(state: State) -> Dict[str, Any]:
+            start_time = datetime.datetime.now()
+            logger.info(f"Risk assessment started at {start_time}")
+            result = {}
+            try:
+                result = risk_assessment_agent(state)
+            except Exception as e:
+                logger.error(f"Risk assessment failed: {e}")
+            end_time = datetime.datetime.now()
+            logger.info(f"Risk assessment completed at {end_time} (duration: {end_time - start_time})")
+            return result
+
+        graph.add_node("risk_assessment", log_risk_assessment)
         graph.add_node("final_recommendation", final_recommendation_agent)
         graph.add_node("simulation", simulation_node)
         graph.add_node("performance", performance_node)
@@ -468,6 +506,7 @@ def run_analysis_and_simulation(stocks_to_analyze: Optional[list] = None, backte
             logger.info("Basic RSI mode enabled with threshold 30")
         # Execute full workflow
         final_state = graph.invoke(initial_state)
+        final_state["backtest"] = backtest
         logger.info(f"Final state backtest flag: {final_state.get('backtest', False)}")
 
         # Check if any stocks were successfully fetched

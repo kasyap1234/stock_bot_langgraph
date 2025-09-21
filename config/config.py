@@ -150,12 +150,6 @@ class Settings(BaseSettings):
     ]
     log_format: str = '%(asctime)s - %(levelname)s - %(message)s'
     yahoo_finance_api_key: str = ""  # Usually not required
-    adaptive_thresholds: dict = {
-        'high_volatility': 0.05,
-        'medium_volatility': 0.02,
-        'low_volatility': 0.01
-    }
-    request_timeout: int = 10
 
     class Config:
         env_file = ".env"
@@ -177,3 +171,76 @@ def validate_config() -> None:
 
 # FIXED: Call validation on import
 validate_config()
+
+# Top-level constants for compatibility with legacy code
+DEFAULT_STOCKS = settings.default_stocks
+MAX_WORKERS = settings.max_workers
+REAL_TIME_MAX_UPDATES = settings.real_time_max_updates
+ALPHA_VANTAGE_API_KEY = settings.alpha_vantage_api_key
+FRED_API_KEY = settings.fred_api_key
+NEWS_API_KEY = settings.news_api_key
+MODEL_NAME = settings.groq_model_name
+GROQ_API_KEY = settings.groq_api_key
+TEMPERATURE = settings.temperature
+TOP_N_RECOMMENDATIONS = settings.top_n_recommendations
+DEBUG_RECOMMENDATION_LOGGING = settings.debug_recommendation_logging
+TRADE_LIMIT = settings.trade_limit
+SIMULATION_DAYS = settings.simulation_days
+WALK_FORWARD_ENABLED = settings.walk_forward_enabled
+LOG_LEVEL = settings.log_level
+LOG_FORMAT = settings.log_format
+API_RATE_LIMIT_DELAY = settings.api_rate_limit_delay
+RSI_OVERBOUGHT = settings.rsi_overbought
+RSI_OVERSOLD = settings.rsi_oversold
+NIFTY_50_STOCKS = settings.nifty_50_stocks
+CONFIRMATION_THRESHOLD = settings.confirmation_threshold
+ENSEMBLE_THRESHOLD = settings.ensemble_threshold
+TREND_STRENGTH_THRESHOLD = settings.trend_strength_threshold
+PROBABILITY_THRESHOLD = settings.probability_threshold
+BACKTEST_VALIDATION_THRESHOLD = settings.backtest_validation_threshold
+ADAPTIVE_THRESHOLDS = settings.adaptive_thresholds
+REQUEST_TIMEOUT = settings.request_timeout
+ENABLE_ADVANCED_TECH = settings.enable_advanced_tech
+ICHIMOKU_PERIODS = settings.ichimoku_periods
+FIB_LEVELS = settings.fib_levels
+SUPPORT_RESISTANCE_PERIODS = settings.support_resistance_periods
+ML_MODEL_PARAMS = settings.ml_model_params
+GRID_SEARCH_PARAMS = settings.grid_search_params
+MONTE_CARLO_SIMULATIONS = settings.monte_carlo_simulations
+MONTE_CARLO_HORIZON = settings.monte_carlo_horizon
+VPVR_BINS = settings.vpvr_bins
+VISIBLE_RANGE = settings.visible_range
+VOLUME_PERCENTILE = settings.volume_percentile
+HA_CONFLUENCE_BARS = settings.ha_confluence_bars
+HA_TFS = settings.ha_tfs
+GARCH_P = settings.garch_p
+GARCH_Q = settings.garch_q
+FORECAST_HORIZON = settings.forecast_horizon
+HARMONIC_PATTERNS = settings.harmonic_patterns
+TOLERANCE = settings.tolerance
+LOOKBACK = settings.lookback
+MIN_CONFIDENCE = settings.min_confidence
+HMM_STATES = settings.hmm_states
+HMM_ITER = settings.hmm_iter
+LSTM_EPOCHS = settings.lstm_epochs
+LSTM_BATCH = settings.lstm_batch
+LSTM_WINDOW = settings.lstm_window
+LSTM_FEATURES = settings.lstm_features
+MC_VA_PATHS = settings.mc_va_paths
+VA_CONFIDENCE = settings.va_confidence
+STRESS_SCENARIOS = settings.stress_scenarios
+INDIA_SPECIFIC_PARAMS = settings.india_specific_params
+TWITTER_BEARER_TOKEN = settings.twitter_bearer_token
+RISK_TOLERANCE = settings.risk_tolerance
+MAX_POSITIONS = settings.max_positions
+MAX_PORTFOLIO_DRAWDOWN = settings.max_portfolio_drawdown
+MAX_DAILY_LOSS = settings.max_daily_loss
+MAX_POSITION_SIZE_PCT = settings.max_position_size_pct
+MAX_SECTOR_EXPOSURE = settings.max_sector_exposure
+KELLY_FRACTION = settings.kelly_fraction
+RISK_FREE_RATE = settings.risk_free_rate
+ATR_PERIOD = settings.atr_period
+TRAILING_STOP_PCT = settings.trailing_stop_pct
+TIME_EXIT_DAYS = settings.time_exit_days
+PROFIT_TARGET_LEVELS = settings.profit_target_levels
+MODEL_DIR = settings.model_dir

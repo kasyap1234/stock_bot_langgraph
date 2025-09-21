@@ -12,6 +12,7 @@ def macro_analysis_agent(state: State) -> State:
     
     logging.info("Starting macro analysis agent")
 
+    macro_data = {}
     try:
         macro_data = get_macro_data()
     except Exception as e:
@@ -23,64 +24,75 @@ def macro_analysis_agent(state: State) -> State:
         logging.warning("No macro data available for analysis")
         return state
 
-    macro_scores = {}
+    macro_scores = {'RBI_REPO': 0.0, 'INDIA_UNRATE': 0.0, 'INDIA_GDP': 0.0}
 
-    # RBI Repo Rate: High rates negative for Indian stocks
-    repo_data = macro_data.get('RBI Repo Rate', {})
-    repo_rate = repo_data.get('value', 6.5)
-    is_default = repo_data.get('date') == 'default'
-    if is_default:
-        logging.warning(f"Using default RBI Repo Rate: {repo_rate}% (API data unavailable)")
-    if repo_rate > 7.0:
-        repo_score = -1.0  # Very high rates, negative for stocks
-    elif repo_rate > 6.5:
-        repo_score = -0.5  # High rates, moderately negative
-    elif repo_rate > 5.5:
-        repo_score = 0.0   # Neutral rates
-    else:
-        repo_score = 0.5   # Low rates positive for stocks
-    macro_scores['RBI_REPO'] = repo_score
-    logging.info(f"RBI Repo Rate score: {repo_score} (rate: {repo_rate}%) - Contribution to composite: {repo_score * 0.3:.2f}")
+    try:
+        repo_data = macro_data.get('RBI Repo Rate', {})
+        repo_rate = repo_data.get('value', 6.5)
+        is_default = repo_data.get('date') == 'default'
+        if is_default:
+            logging.warning(f"Using default RBI Repo Rate: {repo_rate}% (API data unavailable)")
+        if repo_rate > 7.0:
+            repo_score = -1.0
+        elif repo_rate > 6.5:
+            repo_score = -0.5
+        elif repo_rate > 5.5:
+            repo_score = 0.0
+        else:
+            repo_score = 0.5
+        macro_scores['RBI_REPO'] = repo_score
+        logging.info(f"RBI Repo Rate score: {repo_score} (rate: {repo_rate}%) - Contribution to composite: {repo_score * 0.3:.2f}")
+    except Exception as e:
+        logger.error(f"Error calculating RBI Repo Rate score: {e}")
+        macro_scores['RBI_REPO'] = 0.0
+        logging.info("RBI Repo Rate score: 0.0 (default due to error)")
 
-    # India Unemployment Rate: High unemployment negative
-    unrate_data = macro_data.get('Unemployment Rate', {})
-    unrate = unrate_data.get('value', 7.0)
-    is_default = unrate_data.get('date') == 'default'
-    if is_default:
-        logging.warning(f"Failed to fetch Unemployment Rate from FRED: Bad Request. Series tried: LRUN64TTINQ, INDUNEMP, UNRATE. Using default: {unrate}%")
-    if unrate > 8.0:
-        unrate_score = -1.0  # Very high unemployment
-    elif unrate > 6.5:
-        unrate_score = -0.5  # High unemployment
-    elif unrate > 5.0:
-        unrate_score = 0.0   # Moderate unemployment
-    else:
-        unrate_score = 0.5   # Low unemployment positive
-    macro_scores['INDIA_UNRATE'] = unrate_score
-    logging.info(f"India Unemployment Rate score: {unrate_score} (rate: {unrate}%) - Contribution to composite: {unrate_score * 0.3:.2f}")
+    try:
+        unrate_data = macro_data.get('Unemployment Rate', {})
+        unrate = unrate_data.get('value', 7.0)
+        is_default = unrate_data.get('date') == 'default'
+        if is_default:
+            logging.warning(f"Failed to fetch Unemployment Rate from FRED: Bad Request. Series tried: LRUN64TTINQ, INDUNEMP, UNRATE. Using default: {unrate}%")
+        if unrate > 8.0:
+            unrate_score = -1.0
+        elif unrate > 6.5:
+            unrate_score = -0.5
+        elif unrate > 5.0:
+            unrate_score = 0.0
+        else:
+            unrate_score = 0.5
+        macro_scores['INDIA_UNRATE'] = unrate_score
+        logging.info(f"India Unemployment Rate score: {unrate_score} (rate: {unrate}%) - Contribution to composite: {unrate_score * 0.3:.2f}")
+    except Exception as e:
+        logger.error(f"Error calculating India Unemployment Rate score: {e}")
+        macro_scores['INDIA_UNRATE'] = 0.0
+        logging.info("India Unemployment Rate score: 0.0 (default due to error)")
 
-    # India GDP Growth Rate: Higher growth positive for stocks
-    gdp_data = macro_data.get('Real Gross Domestic Product', {})
-    gdp_growth = gdp_data.get('value', 6.5)
-    is_default = gdp_data.get('date') == 'default'
-    if is_default:
-        logging.warning(f"Using default GDP Growth Rate: {gdp_growth}% (API data unavailable)")
-    if gdp_growth > 8.0:
-        gdp_score = 1.0   # Strong growth, very positive
-    elif gdp_growth > 7.0:
-        gdp_score = 0.5   # Good growth, positive
-    elif gdp_growth > 5.0:
-        gdp_score = 0.0   # Moderate growth, neutral
-    elif gdp_growth > 4.0:
-        gdp_score = -0.5  # Slow growth, negative
-    else:
-        gdp_score = -1.0  # Very slow/negative growth, very negative
-    macro_scores['INDIA_GDP'] = gdp_score
-    logging.info(f"India GDP Growth score: {gdp_score} (growth: {gdp_growth}%) - Contribution to composite: {gdp_score * 0.4:.2f}")
+    try:
+        gdp_data = macro_data.get('GDP Growth Rate YoY', {})
+        gdp_growth = gdp_data.get('value', 6.5)
+        is_default = gdp_data.get('date') == 'default'
+        if is_default:
+            logging.warning(f"Using default GDP Growth Rate: {gdp_growth}% (API data unavailable)")
+        if gdp_growth > 8.0:
+            gdp_score = 1.0
+        elif gdp_growth > 7.0:
+            gdp_score = 0.5
+        elif gdp_growth > 5.0:
+            gdp_score = 0.0
+        elif gdp_growth > 4.0:
+            gdp_score = -0.5
+        else:
+            gdp_score = -1.0
+        macro_scores['INDIA_GDP'] = gdp_score
+        logging.info(f"India GDP Growth score: {gdp_score} (growth: {gdp_growth}%) - Contribution to composite: {gdp_score * 0.4:.2f}")
+    except Exception as e:
+        logger.error(f"Error calculating India GDP Growth score: {e}")
+        macro_scores['INDIA_GDP'] = 0.0
+        logging.info("India GDP Growth score: 0.0 (default due to error)")
 
-    # Composite macro score: weighted average (GDP 40%, RBI Repo 30%, Unemployment 30%)
     weights = {'INDIA_GDP': 0.4, 'RBI_REPO': 0.3, 'INDIA_UNRATE': 0.3}
-    composite_macro = sum(macro_scores[key] * weights[key] for key in weights if key in macro_scores)
+    composite_macro = sum(macro_scores[key] * weights[key] for key in weights)
     macro_scores['composite'] = composite_macro
 
     state["macro_scores"] = macro_scores

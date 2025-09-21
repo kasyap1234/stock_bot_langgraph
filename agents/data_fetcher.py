@@ -116,9 +116,7 @@ def data_fetcher_agent(state: State, symbols: List[str] = None, period: str = "5
     total_count = len(symbols)
     logger.info(f"DataActor completed: {successful_count}/{total_count} stocks successful, {failed_count} failed")
 
-    state["stock_data"] = stock_data
-    state["failed_stocks"] = failed_stocks
-    return state
+    return {"stock_data": stock_data, "failed_stocks": failed_stocks}
 
 
 def stop_real_time_streaming(state: State, symbols: List[str] = None) -> State:

@@ -392,6 +392,8 @@ class WalkForwardOptimizer:
                 num_windows=3,  # Quick tuning
                 candidates=[25, 30, 35, 40, 45, 50]  # From config.GRID_SEARCH_PARAMS rsi_period but for threshold
             )
+            if tuned_threshold is None:
+                tuned_threshold = 30.0
             logger.info(f"Period {period.period_id}: Tuned RSI threshold = {tuned_threshold:.1f} on IS data")
             
             # Run IS backtest for IS metrics

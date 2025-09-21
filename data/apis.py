@@ -58,7 +58,11 @@ class UnifiedDataFetcher:
 
     def _fetch_yahooquery_history(self, period: str, interval: str) -> pd.DataFrame:
         """Primary source for historical data."""
-        ticker = Ticker(self.symbol, asynchronous=False)
+        if self.symbol.endswith('.NS'):
+            ticker_symbol = f"NSE:{self.symbol.split('.')[0]}"
+        else:
+            ticker_symbol = self.symbol
+        ticker = Ticker(ticker_symbol, asynchronous=False)
         df = ticker.history(period=period, interval=interval)
         
         # Data validation

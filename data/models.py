@@ -119,6 +119,9 @@ class State(ExtTypedDict):
     simulation_results: Dict[str, Any]
     performance_analysis: Dict[str, Any]
     backtest_results: Dict[str, Any]
+    data_valid: bool
+    validation_errors: List[str]
+    backtest: bool
     # Multi-stock analysis keys
     top_buy_candidate: Dict[str, Dict[str, str]]
     buy_ranking: List[Dict[str, Any]]

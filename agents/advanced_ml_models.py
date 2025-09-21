@@ -1,5 +1,3 @@
-
-
 import logging
 import pandas as pd
 import numpy as np
@@ -1404,22 +1402,7 @@ class ModelCompression:
 
         return stats
 
-
 class ModelEvaluator:
-        
-        importance_dict = {}
-
-        if hasattr(model, 'feature_importances_'):
-            importances = model.feature_importances_
-            for name, importance in zip(feature_names, importances):
-                importance_dict[name] = float(importance)
-        elif hasattr(model, 'coef_'):
-            # For linear models
-            coef = model.coef_[0] if len(model.coef_.shape) > 1 else model.coef_
-            for name, coeff in zip(feature_names, coef):
-                importance_dict[name] = float(abs(coeff))
-
-        return importance_dict
 
     def create_ensemble_model(self, model_names: List[str], X: pd.DataFrame, y: pd.Series) -> VotingClassifier:
         

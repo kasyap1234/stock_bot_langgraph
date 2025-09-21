@@ -161,7 +161,8 @@ def _calculate_individual_risk_metrics(symbol: str, df: pd.DataFrame) -> Dict[st
         logger.info(f"Individual risk input columns: {df.columns.tolist()}")
         if 'close' in df.columns:
             df = df.rename(columns={'close': 'Close'})
-            logger.info(f"Renamed columns for individual risk: {df.columns.tolist()}")
+        df = df.rename(columns={'high': 'High', 'low': 'Low', 'open': 'Open'})
+        logger.info(f"Renamed columns for individual risk: {df.columns.tolist()}")
         # Daily returns
         daily_returns = df['Close'].pct_change().dropna().values
 
@@ -241,7 +242,8 @@ def _calculate_portfolio_risk_metrics(stock_data: Dict, risk_metrics: Dict) -> D
             logger.info(f"Portfolio risk input columns for {symbol}: {df.columns.tolist()}")
             if 'close' in df.columns:
                 df = df.rename(columns={'close': 'Close'})
-                logger.info(f"Renamed columns for portfolio risk {symbol}: {df.columns.tolist()}")
+            df = df.rename(columns={'high': 'High', 'low': 'Low', 'open': 'Open'})
+            logger.info(f"Renamed columns for portfolio risk {symbol}: {df.columns.tolist()}")
             daily_returns = df['Close'].pct_change().dropna().values
             returns_list.append(daily_returns)
 
