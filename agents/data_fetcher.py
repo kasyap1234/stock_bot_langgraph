@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import concurrent.futures
 
-from config.config import DEFAULT_STOCKS, MAX_WORKERS
+from config.config import DEFAULT_STOCKS, MAX_WORKERS, REAL_TIME_MAX_UPDATES
 from data.models import State
 from data.real_time_data import real_time_manager
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=128)
-def _get_stock_data(symbol: str, period: str = "1y") -> pd.DataFrame:
+def _get_stock_data(symbol: str, period: str = "5y") -> pd.DataFrame:
     
     try:
         from yahooquery import Ticker
@@ -42,10 +42,10 @@ def _get_stock_data(symbol: str, period: str = "1y") -> pd.DataFrame:
         raise  # Raise to prevent fallback; handle in caller if needed
 
 
-def data_fetcher_agent(state: State, symbols: List[str] = None, real_time: bool = False,
+def data_fetcher_agent(state: State, symbols: List[str] = None, period: str = "5y", real_time: bool = False,
                       sources: List[str] = None, interval: int = 60) -> State:
     
-    logging.info(f"Starting data fetcher agent (real_time={real_time})")
+    logger.info(f"Starting data fetcher agent (real_time={real_time})")
 
     if symbols is None:
         symbols = DEFAULT_STOCKS
@@ -64,7 +64,7 @@ def data_fetcher_agent(state: State, symbols: List[str] = None, real_time: bool 
 
             # Create event loop if not exists
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
             except RuntimeError:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -74,7 +74,6 @@ def data_fetcher_agent(state: State, symbols: List[str] = None, real_time: bool 
 
             # Add callback to update state
             def update_state_callback(data):
-                from config.config import REAL_TIME_MAX_UPDATES
                 symbol = data.get('symbol')
                 if symbol:
                     if symbol not in state['real_time_data']:
@@ -97,7 +96,7 @@ def data_fetcher_agent(state: State, symbols: List[str] = None, real_time: bool 
     # Use ThreadPoolExecutor for parallel data fetching
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(symbols), MAX_WORKERS)) as executor:
         # Submit all fetch tasks
-        future_to_symbol = {executor.submit(_get_stock_data, symbol, "1y"): symbol for symbol in symbols}
+        future_to_symbol = {executor.submit(_get_stock_data, symbol, period): symbol for symbol in symbols}
 
         # Collect results as they complete
         for future in concurrent.futures.as_completed(future_to_symbol):
@@ -115,7 +114,7 @@ def data_fetcher_agent(state: State, symbols: List[str] = None, real_time: bool 
     successful_count = len(stock_data)
     failed_count = len(failed_stocks)
     total_count = len(symbols)
-    logger.info(f"Data fetch summary: {successful_count}/{total_count} stocks successful, {failed_count} failed")
+    logger.info(f"DataActor completed: {successful_count}/{total_count} stocks successful, {failed_count} failed")
 
     state["stock_data"] = stock_data
     state["failed_stocks"] = failed_stocks
@@ -130,7 +129,7 @@ def stop_real_time_streaming(state: State, symbols: List[str] = None) -> State:
 
     # Create event loop if not exists
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -140,8 +139,8 @@ def stop_real_time_streaming(state: State, symbols: List[str] = None) -> State:
 
     if symbols is None:
         state['real_time_active'] = False
-        logger.info("Stopped all real-time streaming")
+        logger.info("DataActor stopped all real-time streaming")
     else:
-        logger.info(f"Stopped real-time streaming for {len(symbols)} symbols")
+        logger.info(f"DataActor stopped real-time streaming for {len(symbols)} symbols")
 
     return state

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import re
 
 from .models import StockData, HistoricalData, NewsData, NewsItem, validate_stock_data
+from .quality_validator import validate_data, InsufficientDataError, ConstantPriceError, validate_data_quality, DataQualityValidator
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,41 @@ def clean_stock_data(stocks_data: List[StockData]) -> HistoricalData:
             cleaned_data.append(cleaned_record)
         else:
             logger.warning(f"Failed to clean stock record: {stock_data}")
+
+    try:
+        validate_data(cleaned_data)
+    except (InsufficientDataError, ConstantPriceError) as e:
+        logger.warning(f"Data validation failed during ingestion: {e}")
+        return []  # Skip invalid data by returning empty list
+    
+    # Full quality validation
+    if cleaned_data:
+        validator = DataQualityValidator()
+        report = validate_data_quality(cleaned_data, 'unknown', validator)
+        logger.info(f"Quality report: score={report.overall_quality_score}, issues={len(report.issues)}")
+        
+        # Check for critical issues
+        critical_issues = [issue for issue in report.issues if issue.severity in ['high', 'critical']]
+        if report.overall_quality_score < 0.85 or len(critical_issues) > len(cleaned_data) * 0.1:
+            logger.warning(f"Critical quality issues in data: score={report.overall_quality_score}, critical={len(critical_issues)}")
+            return []
+        
+        # Filter excessive zero close/volume
+        zero_close_count = sum(1 for record in cleaned_data if record.get('close', 0) == 0)
+        zero_volume_count = sum(1 for record in cleaned_data if record.get('volume', 0) == 0)
+        total_records = len(cleaned_data)
+        
+        if zero_close_count / total_records > 0.1:
+            logger.warning(f"Filtering {zero_close_count} zero-close records (>10%)")
+            cleaned_data = [r for r in cleaned_data if r.get('close', 0) != 0]
+        
+        if zero_volume_count / total_records > 0.1:
+            logger.warning(f"Filtering {zero_volume_count} zero-volume records (>10%)")
+            cleaned_data = [r for r in cleaned_data if r.get('volume', 0) != 0]
+        
+        if len(cleaned_data) < total_records * 0.8:  # If >20% filtered, consider invalid
+            logger.warning("Too many records filtered due to zero values")
+            return []
 
     return cleaned_data
 
@@ -62,6 +98,7 @@ def clean_single_stock_record(stock_data: StockData) -> Optional[StockData]:
 
 
 def clean_symbol(symbol: str) -> str:
+    """Clean and validate stock symbol with logging."""
     
     if not isinstance(symbol, str):
         symbol = str(symbol)
@@ -74,10 +111,11 @@ def clean_symbol(symbol: str) -> str:
         logger.warning(f"Invalid symbol format: {symbol}")
         return ""
 
-    # For Indian stocks, ensure proper NSE suffix if missing
-    if symbol and not symbol.endswith('.NS') and '.' not in symbol[-3:]:
-        # Add .NS for Indian stocks that don't have a suffix
-        symbol += '.NS'
+    # FIXED: Check for NSE or BSE suffix, otherwise leave as is
+    if not symbol.endswith(('.NS', '.BO')):
+        logger.info(f"Symbol {symbol} does not have NSE/BSE suffix, leaving unchanged")
+    else:
+        logger.debug(f"Symbol {symbol} has valid NSE/BSE suffix")
 
     return symbol
 

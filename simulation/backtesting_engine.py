@@ -1,6 +1,7 @@
 
 
 import logging
+logger = logging.getLogger(__name__)
 from typing import Dict, List, Optional, Union
 from datetime import datetime, timedelta
 from dataclasses import dataclass
@@ -21,8 +22,6 @@ except ImportError:
     EnsembleStrategy = None
 from config.config import TRADE_LIMIT, SIMULATION_DAYS
 from data.models import State
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -276,7 +275,7 @@ class BacktestingEngine:
             self.trades.append(trade)
 
             total_costs += commission
-            logger.info(f"Executed {trade_type} {quantity} {symbol} at {current_price:.2f}")
+            logger.info(f"Executed {trade_type} {quantity} {symbol} at {current_price or 0:.2f}")
 
         return total_costs
 
@@ -426,25 +425,31 @@ class BacktestingEngine:
         return portfolio_value
 
     def _calculate_performance_metrics(self) -> Dict[str, Union[float, Dict, List]]:
+        """Calculate comprehensive performance metrics for the backtest."""
         
         try:
             # Basic return calculation
             final_value = self.portfolio_history[-1].portfolio_value if self.portfolio_history else self.initial_capital
-            total_return = (final_value - self.initial_capital) / self.initial_capital
+            total_return = (final_value - self.initial_capital) / self.initial_capital if self.initial_capital > 0 else 0.0
 
             # Annualized return
             days_held = len(self.portfolio_history) - 1 if len(self.portfolio_history) > 1 else 1
             years_held = max(days_held / 252, 0.01)  # Use 252 trading days
-            annualized_return = (1 + total_return) ** (1 / years_held) - 1
+            annualized_return = ((1 + total_return) ** (1 / years_held) - 1) if years_held > 0 else 0.0
+            annualized_return = 0.0 if pd.isna(annualized_return) or annualized_return is None else annualized_return
 
-            # Volatility calculation
+            # FIXED: Clip returns for volatility calculation
             if len(self.portfolio_history) > 1:
                 returns = [snap.daily_return for snap in self.portfolio_history[1:]]
-                volatility = np.std(returns) * np.sqrt(252)  # Annualized volatility
-                sharpe_ratio = annualized_return / volatility if volatility > 0 else 0
+                # Clip extreme returns to prevent unrealistic volatility
+                clipped_returns = [min(max(r, -0.5), 0.5) for r in returns]
+                volatility = np.std(clipped_returns) * np.sqrt(252) if len(clipped_returns) > 0 else 0.0  # Annualized volatility
+                volatility = 0.0 if pd.isna(volatility) or volatility is None else volatility
+                sharpe_ratio = (annualized_return / volatility) if volatility > 0 else 0.0
+                sharpe_ratio = 0.0 if pd.isna(sharpe_ratio) or sharpe_ratio is None else sharpe_ratio
             else:
-                volatility = 0
-                sharpe_ratio = 0
+                volatility = 0.0
+                sharpe_ratio = 0.0
 
             # Maximum drawdown
             peak = self.initial_capital
@@ -453,8 +458,9 @@ class BacktestingEngine:
             for snap in self.portfolio_history:
                 if snap.portfolio_value > peak:
                     peak = snap.portfolio_value
-                drawdown = (peak - snap.portfolio_value) / peak
+                drawdown = (peak - snap.portfolio_value) / peak if peak > 0 else 0.0
                 max_drawdown = max(max_drawdown, drawdown)
+            max_drawdown = 0.0 if pd.isna(max_drawdown) or max_drawdown is None else max_drawdown
 
             # Win rate calculation
             profitable_trades = 0
@@ -466,9 +472,14 @@ class BacktestingEngine:
                 win_rate = profitable_trades / total_trades
             else:
                 win_rate = 0.0
+            win_rate = 0.0 if pd.isna(win_rate) or win_rate is None else win_rate
 
             # Trading statistics
-            total_commission = sum(trade.commission for trade in self.trades)
+            total_commission = sum(trade.commission for trade in self.trades) if self.trades else 0.0
+            total_commission = 0.0 if pd.isna(total_commission) or total_commission is None else total_commission
+
+            final_value = 0.0 if pd.isna(final_value) or final_value is None else final_value
+            total_return = 0.0 if pd.isna(total_return) or total_return is None else total_return
 
             return {
                 "total_return": total_return,
@@ -709,4 +720,89 @@ class BacktestingEngine:
             logger.info(f"Strategy executed {trade_type} {quantity} {symbol} at {current_price:.2f} (Confidence: {signal.confidence:.2f})")
 
         return total_costs
+
+    def walk_forward_validation(
+        self,
+        stock_data: Dict[str, pd.DataFrame],
+        train_ratio: float = 0.8,
+        step_days: int = 50,
+        rsi_candidates: List[float] = None
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Perform walk-forward validation: tune on train windows, test on OOS, average metrics.
+        """
+        if rsi_candidates is None:
+            rsi_candidates = [25, 30, 35, 40]
+        
+        results = {}
+        for symbol, df in stock_data.items():
+            if len(df) < 200:  # Minimum data
+                results[symbol] = {'avg_sharpe': 0.0, 'avg_win_rate': 0.0, 'avg_drawdown': 0.0, 'windows': 0}
+                continue
+            
+            df = df.sort_index()
+            n = len(df)
+            train_len = int(n * train_ratio)
+            num_windows = max(1, (n - train_len) // step_days)
+            
+            window_metrics = []
+            for i in range(num_windows):
+                train_start = 0
+                train_end = train_len + i * step_days
+                test_start = train_end
+                test_end = min(test_start + step_days, n)
+                
+                if test_end - test_start < 10:  # Too short test
+                    break
+                
+                train_df = df.iloc[train_start:train_end]
+                test_df = df.iloc[test_start:test_end]
+                
+                # Tune RSI threshold on train
+                best_thresh = rsi_candidates[0]
+                best_sharpe = -np.inf
+                for thresh in rsi_candidates:
+                    train_signals = self._generate_rsi_signals(train_df, thresh)
+                    train_returns = self._compute_strategy_returns_from_signals(train_df, train_signals)
+                    if len(train_returns) > 10:
+                        mean_ret = train_returns.mean()
+                        std_ret = train_returns.std()
+                        sharpe = mean_ret / std_ret * np.sqrt(252) if std_ret > 0 else 0
+                        if sharpe > best_sharpe:
+                            best_sharpe = sharpe
+                            best_thresh = thresh
+                
+                # Test on OOS with best thresh
+                test_signals = self._generate_rsi_signals(test_df, best_thresh)
+                test_returns = self._compute_strategy_returns_from_signals(test_df, test_signals)
+                
+                # Backtest metrics on test
+                test_results = self.run_backtest(
+                    recommendations={symbol: {'action': 'HOLD'}},  # Dummy, but use signals
+                    stock_data={symbol: test_df},
+                    start_date=test_df.index[0],
+                    end_date=test_df.index[-1],
+                    rsi_buy_threshold=best_thresh
+                )
+                
+                if 'error' not in test_results:
+                    sharpe = test_results.get('sharpe_ratio', 0)
+                    win_rate = test_results.get('win_rate', 0)
+                    drawdown = test_results.get('max_drawdown', 0)
+                    window_metrics.append({'sharpe': sharpe, 'win_rate': win_rate, 'drawdown': drawdown})
+            
+            if window_metrics:
+                avg_sharpe = np.mean([m['sharpe'] for m in window_metrics])
+                avg_win_rate = np.mean([m['win_rate'] for m in window_metrics])
+                avg_drawdown = np.mean([m['drawdown'] for m in window_metrics])
+                results[symbol] = {
+                    'avg_sharpe': avg_sharpe,
+                    'avg_win_rate': avg_win_rate,
+                    'avg_drawdown': avg_drawdown,
+                    'windows': len(window_metrics)
+                }
+            else:
+                results[symbol] = {'avg_sharpe': 0.0, 'avg_win_rate': 0.0, 'avg_drawdown': 0.0, 'windows': 0}
+        
+        return results
         return round(np.mean(best_thresholds)) if best_thresholds else 30.0

@@ -124,9 +124,9 @@ def calculate_risk_parity_weights(volatilities: np.ndarray, correlations: np.nda
 
 
 def risk_assessment_agent(state: State) -> State:
+    """RiskActor: Perform risk assessment."""
+    logger.info("RiskActor started")
     
-    logging.info("Starting risk assessment agent")
-
     stock_data = state.get("stock_data", {})
     risk_metrics = {}
 
@@ -136,7 +136,7 @@ def risk_assessment_agent(state: State) -> State:
         try:
             individual_risk = _calculate_individual_risk_metrics(symbol, df)
             risk_metrics[symbol] = individual_risk
-            logger.info(f"Calculated risk metrics for {symbol}")
+            logger.info(f"RiskActor processed {symbol}")
 
         except Exception as e:
             logger.error(f"Error in risk assessment for {symbol}: {e}")
@@ -150,6 +150,7 @@ def risk_assessment_agent(state: State) -> State:
         except Exception as e:
             logger.error(f"Error calculating portfolio risk: {e}")
 
+    logger.info(f"RiskActor completed for {len(symbols)} symbols")
     state["risk_metrics"] = risk_metrics
     return state
 

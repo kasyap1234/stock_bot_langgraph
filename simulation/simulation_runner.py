@@ -4,11 +4,153 @@ import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 
-from config.config import SIMULATION_DAYS, TRADE_LIMIT
 from data.models import State
 from .backtesting_engine import BacktestingEngine
 
 logger = logging.getLogger(__name__)
+
+# Defaults for standalone execution
+SIMULATION_DAYS = 252
+TRADE_LIMIT = 100
+
+
+from config.config import WALK_FORWARD_ENABLED
+from data.apis import get_stock_history
+from simulation.advanced_backtesting_engine import WalkForwardOptimizer
+from simulation.backtesting_engine import BacktestingEngine
+from datetime import datetime, timedelta
+import pandas as pd
+import numpy as np
+
+def run_walk_forward_rsi_analysis(
+    symbol: str = "RELIANCE.NS",
+    total_period: str = "2y",
+    train_ratio: float = 0.8,
+    test_ratio: float = 0.2,
+    step_days: int = 50,
+    initial_capital: float = 1000000.0,
+    commission_rate: float = 0.001
+) -> Dict[str, Any]:
+    """
+    Run walk-forward analysis for RSI strategy on the given symbol.
+    Uses expanding training windows with fixed test windows, stepping by step_days.
+    Tunes RSI threshold on train data, tests on out-of-sample test data.
+    Returns average out-of-sample metrics.
+    """
+    try:
+        # Fetch historical data
+        logger.info(f"Fetching {total_period} data for {symbol}")
+        raw_data = get_stock_history(symbol, period=total_period, interval="1d")
+        if not raw_data:
+            return {"error": f"No data fetched for {symbol}"}
+
+        # Convert to DataFrame
+        df_list = []
+        for record in raw_data:
+            df_list.append({
+                'Date': pd.to_datetime(record['date']),
+                'Open': record['open'],
+                'High': record['high'],
+                'Low': record['low'],
+                'Close': record['close'],
+                'Volume': record['volume']
+            })
+        df = pd.DataFrame(df_list)
+        df.set_index('Date', inplace=True)
+        df.sort_index(inplace=True)
+
+        # Filter trading days (weekdays)
+        df = df[df.index.weekday < 5]
+        trading_days = len(df)
+        logger.info(f"Loaded {trading_days} trading days for {symbol}")
+
+        if trading_days < 200:  # Minimum for meaningful walk-forward
+            return {"error": f"Insufficient data: {trading_days} days"}
+
+        # Calculate window sizes (in trading days)
+        min_train_days = int(100 * train_ratio)  # Min 80 days train
+        test_days = int(50 * test_ratio)  # ~10 days test, but adjust to step
+        if test_days < 20:
+            test_days = 20  # Ensure reasonable test size
+
+        engine = BacktestingEngine(
+            initial_capital=initial_capital,
+            commission_rate=commission_rate
+        )
+
+        oos_metrics = {
+            'sharpe_ratios': [],
+            'win_rates': [],
+            'max_drawdowns': [],
+            'total_returns': [],
+            'num_windows': 0
+        }
+
+        # Walk-forward: expanding train, rolling test
+        for start_idx in range(min_train_days, trading_days - test_days, step_days):
+            train_end_idx = start_idx
+            test_end_idx = min(start_idx + test_days, trading_days)
+
+            train_df = df.iloc[:train_end_idx]
+            test_df = df.iloc[start_idx:test_end_idx]
+
+            if len(train_df) < min_train_days or len(test_df) < 10:
+                continue
+
+            # Tune RSI threshold on train data
+            tuned_threshold = engine.tune_rsi_threshold(
+                {symbol: train_df},
+                num_windows=5,  # Fewer windows for tuning
+                candidates=[25, 30, 35, 40, 45]
+            )
+            logger.info(f"Window {start_idx}: Tuned RSI threshold = {tuned_threshold:.1f}")
+
+            # Run backtest on test data with tuned threshold
+            stock_data_test = {symbol: test_df}
+            test_start = test_df.index[0]
+            test_end = test_df.index[-1]
+
+            results = engine.run_backtest(
+                None,  # No recommendations, use RSI
+                stock_data_test,
+                test_start,
+                test_end,
+                rsi_buy_threshold=tuned_threshold
+            )
+
+            if 'error' not in results and results.get('total_trades', 0) > 0:
+                oos_metrics['sharpe_ratios'].append(results.get('sharpe_ratio', 0))
+                oos_metrics['win_rates'].append(results.get('win_rate', 0))
+                oos_metrics['max_drawdowns'].append(results.get('max_drawdown', 0))
+                oos_metrics['total_returns'].append(results.get('total_return', 0))
+                oos_metrics['num_windows'] += 1
+                logger.info(f"Window {start_idx}-{test_end_idx}: Sharpe={results.get('sharpe_ratio') or 0:.2f}, "
+                            f"Win Rate={results.get('win_rate') or 0:.1%}, MDD={results.get('max_drawdown') or 0:.1%}")
+
+        if oos_metrics['num_windows'] == 0:
+            return {"error": "No valid walk-forward windows completed"}
+
+        # Calculate averages
+        avg_metrics = {
+            'avg_sharpe': np.mean(oos_metrics['sharpe_ratios']),
+            'avg_win_rate': np.mean(oos_metrics['win_rates']),
+            'avg_max_drawdown': np.mean(oos_metrics['max_drawdowns']),
+            'avg_total_return': np.mean(oos_metrics['total_returns']),
+            'num_windows': oos_metrics['num_windows'],
+            'std_sharpe': np.std(oos_metrics['sharpe_ratios']),
+            'reliance_data_points': trading_days
+        }
+
+        logger.info(f"Walk-forward analysis complete for {symbol}: "
+                   f"Avg Sharpe={avg_metrics['avg_sharpe']:.2f}, "
+                   f"Avg Win Rate={avg_metrics['avg_win_rate']:.1%}, "
+                   f"Avg MDD={avg_metrics['avg_max_drawdown']:.1%}")
+
+        return avg_metrics
+
+    except Exception as e:
+        logger.error(f"Walk-forward analysis failed for {symbol}: {e}")
+        return {"error": str(e)}
 
 
 def run_trading_simulation(
@@ -19,6 +161,8 @@ def run_trading_simulation(
     commission_rate: float = 0.001,
     rsi_buy_threshold: Optional[float] = None
 ) -> Dict[str, Any]:
+    """SimulationActor: Run trading simulation."""
+    logger.info("SimulationActor started")
     
     try:
         stock_data = state.get("stock_data", {})
@@ -30,9 +174,28 @@ def run_trading_simulation(
         if not final_recommendations:
             return {"error": "No recommendations available for simulation"}
 
-        logger.info("Starting trading simulation")
-        logger.info(f"Initial capital: ₹{initial_capital:,.0f}")
-        logger.info(f"Stocks in simulation: {list(stock_data.keys())}")
+        logger.info(f"SimulationActor processing {len(stock_data)} symbols")
+
+        # Walk-forward optimization if enabled
+        walk_forward_results = {}
+        if WALK_FORWARD_ENABLED and stock_data:
+            logger.info("Running walk-forward optimization...")
+            optimizer = WalkForwardOptimizer()
+            walk_forward_results = optimizer.run_optimization(
+                stock_data,
+                list(stock_data.keys()),
+                initial_capital
+            )
+            # Log aggregated OOS metrics
+            for symbol, wf_res in walk_forward_results.items():
+                if 'aggregated_oos' in wf_res and 'avg_sharpe' in wf_res['aggregated_oos']:
+                    oos = wf_res['aggregated_oos']
+                    logger.info(f"SimulationActor: {symbol} Walk-Forward OOS: Avg Sharpe={oos['avg_sharpe']:.2f}, "
+                               f"Avg Win Rate={oos['avg_win_rate']:.1%}, Avg Drawdown={oos['avg_drawdown']:.1%}, "
+                               f"Avg Return={oos['avg_returns']:.1%}, Periods={wf_res['num_periods']}, "
+                               f"Target Met={oos['oos_win_rate_target_met']}")
+                else:
+                    logger.warning(f"SimulationActor: {symbol} Walk-Forward failed: {wf_res.get('error', 'Unknown error')}")
 
         # Initialize backtesting engine
         engine = BacktestingEngine(
@@ -81,7 +244,7 @@ def run_trading_simulation(
                 )
                 if 'error' not in period_backtest:
                     period_results.append(period_backtest)
-                    logger.info(f"Period {i+1} ({period_start.date()} to {period_end.date()}): Sharpe {period_backtest.get('sharpe_ratio', 0):.2f}, Win Rate {period_backtest.get('win_rate', 0):.2%}, Max Drawdown {period_backtest.get('max_drawdown', 0):.2%}")
+                    logger.info(f"SimulationActor: Period {i+1} ({period_start.date()} to {period_end.date()}): Sharpe {period_backtest.get('sharpe_ratio', 0):.2f}, Win Rate {period_backtest.get('win_rate', 0):.2%}, Max Drawdown {period_backtest.get('max_drawdown', 0):.2%}")
         if period_results:
             avg_sharpe = sum(r.get('sharpe_ratio', 0) for r in period_results) / len(period_results)
             avg_win = sum(r.get('win_rate', 0) for r in period_results) / len(period_results)
@@ -94,7 +257,7 @@ def run_trading_simulation(
                 'averaged_max_drawdown': avg_drawdown,
                 'period_results': period_results
             }
-            logger.info(f"Averaged metrics: Sharpe {avg_sharpe:.2f}, Win Rate {avg_win:.2%}, Max Drawdown {avg_drawdown:.2%}")
+            logger.info(f"SimulationActor: Averaged metrics: Sharpe {avg_sharpe:.2f}, Win Rate {avg_win:.2%}, Max Drawdown {avg_drawdown:.2%}")
         else:
             backtest_results = {"error": "No valid periods for backtest"}
 
@@ -107,6 +270,7 @@ def run_trading_simulation(
         # Combine results
         results = {
             **backtest_results,
+            "walk_forward_results": walk_forward_results,
             "simulation_analysis": analysis,
             "simulation_metadata": {
                 "start_date": start_date.isoformat(),
@@ -118,15 +282,13 @@ def run_trading_simulation(
             }
         }
 
-        logger.info("Simulation completed successfully")
-        logger.info(f"Final portfolio value: ₹{backtest_results.get('final_portfolio_value', 0):,.0f}")
-        logger.info(f"Total return: {backtest_results.get('total_return', 0):.2%}")
-        logger.info(f"Maximum drawdown: {backtest_results.get('max_drawdown', 0):.2%}")
-
+        symbols = list(stock_data.keys())
+        logger.info(f"SimulationActor completed for {len(symbols)} symbols: {symbols}")
+        logger.info("SimulationActor completed")
         return results
 
     except Exception as e:
-        logger.error(f"Simulation failed: {e}")
+        logger.error(f"SimulationActor failed: {e}")
         return {"error": str(e)}
 
 
@@ -313,3 +475,15 @@ def validate_simulation_state(state: State) -> bool:
 
     logger.info("Simulation state validation passed")
     return True
+
+
+if __name__ == "__main__":
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    results = run_walk_forward_rsi_analysis()
+    print("Walk-Forward RSI Analysis Results for Reliance:")
+    for key, value in results.items():
+        if isinstance(value, float):
+            print(f"{key}: {value:.4f}")
+        else:
+            print(f"{key}: {value}")

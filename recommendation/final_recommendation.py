@@ -68,6 +68,7 @@ class EnhancedRecommendationEngine:
             FactorType.MONTE_CARLO: 0.05,
             FactorType.BACKTEST: 0.04
         }
+        self.current_market_conditions = None
 
     def analyze_factors(self, symbol: str, state: State) -> List[FactorAnalysis]:
         
@@ -317,6 +318,16 @@ class EnhancedRecommendationEngine:
         # Apply aggressive BUY boosts
         original_score = composite_score
 
+        # Apply tiered signal strength system
+        composite_score = self._apply_signal_strength_tiers(composite_score, factors)
+
+        # Apply market regime adaptation
+        composite_score = self._apply_market_regime_adaptation(composite_score)
+
+        # Apply signal decay system
+        composite_score = self._apply_signal_decay(composite_score, factors)
+
+        # Legacy boosts (keep for compatibility)
         # Strong signal boost: +0.1 if any factor > 0.8
         strong_signals = [f for f in factors if f.strength > 0.8]
         if strong_signals:
@@ -336,12 +347,12 @@ class EnhancedRecommendationEngine:
         positive_factors = sum(1 for f in factors if f.strength > 0)
 
         if DEBUG_RECOMMENDATION_LOGGING:
-            logger.debug(f"Aggressive boosts applied: original={original_score:.3f}, boosted={composite_score:.3f}, positive_factors={positive_factors}")
+            logger.debug(f"All boosts applied: original={original_score:.3f}, final={composite_score:.3f}, positive_factors={positive_factors}")
 
-        # Determine action with updated thresholds to reduce HOLD bias
-        if composite_score > 0.1 or (composite_score > 0.05 and positive_factors >= 3):
+        # Determine action with optimized thresholds to reduce HOLD bias
+        if composite_score > 0.08 or (composite_score > 0.04 and positive_factors >= 3):
             action = "BUY"
-        elif composite_score < -0.1:
+        elif composite_score < -0.08:
             action = "SELL"
         else:
             action = "HOLD"
@@ -363,6 +374,145 @@ class EnhancedRecommendationEngine:
             'decision_reasoning': self._generate_decision_reasoning(action, composite_score, factors, weights)
         }
 
+    def _apply_signal_strength_tiers(self, composite_score: float, factors: List[FactorAnalysis]) -> float:
+        """Apply tiered signal strength system to enhance decisive signals"""
+        
+        # Count strong signals (>0.8 or <-0.8)
+        strong_buy_signals = sum(1 for f in factors if f.strength > 0.8)
+        strong_sell_signals = sum(1 for f in factors if f.strength < -0.8)
+        
+        # Count moderate signals (0.3-0.8 or -0.3 to -0.8)
+        moderate_buy_signals = sum(1 for f in factors if 0.3 < f.strength <= 0.8)
+        moderate_sell_signals = sum(1 for f in factors if -0.8 <= f.strength < -0.3)
+        
+        # Apply tiered adjustments
+        if strong_buy_signals >= 2 and composite_score > 0.2:
+            # Tier 1: Multiple strong buy signals - boost significantly
+            composite_score += 0.15
+            if DEBUG_RECOMMENDATION_LOGGING:
+                logger.debug(f"Tier 1 BUY boost: +0.15 (strong_buy={strong_buy_signals}, moderate_buy={moderate_buy_signals})")
+        elif strong_buy_signals >= 1 and moderate_buy_signals >= 2 and composite_score > 0.1:
+            # Tier 2: Strong + moderate buy signals - moderate boost
+            composite_score += 0.08
+            if DEBUG_RECOMMENDATION_LOGGING:
+                logger.debug(f"Tier 2 BUY boost: +0.08 (strong_buy={strong_buy_signals}, moderate_buy={moderate_buy_signals})")
+        elif strong_sell_signals >= 2 and composite_score < -0.2:
+            # Tier 1: Multiple strong sell signals - boost significantly
+            composite_score -= 0.15
+            if DEBUG_RECOMMENDATION_LOGGING:
+                logger.debug(f"Tier 1 SELL boost: -0.15 (strong_sell={strong_sell_signals}, moderate_sell={moderate_sell_signals})")
+        elif strong_sell_signals >= 1 and moderate_sell_signals >= 2 and composite_score < -0.1:
+            # Tier 2: Strong + moderate sell signals - moderate boost
+            composite_score -= 0.08
+            if DEBUG_RECOMMENDATION_LOGGING:
+                logger.debug(f"Tier 2 SELL boost: -0.08 (strong_sell={strong_sell_signals}, moderate_sell={moderate_sell_signals})")
+        
+        return composite_score
+
+    def _apply_market_regime_adaptation(self, composite_score: float) -> float:
+        """Apply market regime-based adaptations to composite score"""
+        
+        # Get current market conditions
+        market_conditions = self.current_market_conditions
+        if not market_conditions:
+            return composite_score
+        
+        # Apply regime-specific adjustments
+        if market_conditions.volatility_regime == "high":
+            # In high volatility, reduce signal strength to avoid false signals
+            composite_score *= 0.85
+            if DEBUG_RECOMMENDATION_LOGGING:
+                logger.debug(f"High volatility regime: composite_score reduced by 15% to {composite_score:.3f}")
+        elif market_conditions.volatility_regime == "low":
+            # In low volatility, increase signal strength for better responsiveness
+            composite_score *= 1.1
+            if DEBUG_RECOMMENDATION_LOGGING:
+                logger.debug(f"Low volatility regime: composite_score increased by 10% to {composite_score:.3f}")
+        
+        # Trend regime adjustments
+        if market_conditions.trend_strength == "strong":
+            # In strong trends, amplify existing signals
+            if composite_score > 0:
+                composite_score *= 1.05
+            elif composite_score < 0:
+                composite_score *= 1.05
+            if DEBUG_RECOMMENDATION_LOGGING:
+                logger.debug(f"Strong trend regime: composite_score amplified by 5% to {composite_score:.3f}")
+        
+        # Sentiment regime adjustments
+        if market_conditions.market_sentiment == "bullish" and composite_score > 0:
+            composite_score *= 1.03
+            if DEBUG_RECOMMENDATION_LOGGING:
+                logger.debug(f"Bullish sentiment regime: BUY signals boosted by 3% to {composite_score:.3f}")
+        elif market_conditions.market_sentiment == "bearish" and composite_score < 0:
+            composite_score *= 1.03
+            if DEBUG_RECOMMENDATION_LOGGING:
+                logger.debug(f"Bearish sentiment regime: SELL signals boosted by 3% to {composite_score:.3f}")
+        
+        return composite_score
+    
+    def _apply_signal_decay(self, composite_score: float, factors: List[FactorAnalysis]) -> float:
+        """Apply signal decay based on factor freshness and market conditions"""
+        
+        # Get current market conditions for decay adjustment
+        market_conditions = self.current_market_conditions
+        
+        # Calculate average factor age (assuming factors have timestamp info)
+        current_time = pd.Timestamp.now()
+        factor_ages = []
+        
+        for factor in factors:
+            # Estimate factor age based on data freshness (simplified)
+            # In real implementation, factors should have timestamp metadata
+            if hasattr(factor, 'timestamp'):
+                age_hours = (current_time - factor.timestamp).total_seconds() / 3600
+            else:
+                # Default age based on factor type
+                age_hours = {
+                    FactorType.TECHNICAL: 1,      # Technical indicators are recent
+                    FactorType.FUNDAMENTAL: 24,    # Fundamental data is daily
+                    FactorType.SENTIMENT: 2,       # Sentiment data is recent
+                    FactorType.RISK: 1,            # Risk data is very recent
+                    FactorType.MACRO: 24           # Macro data is daily
+                }.get(factor.factor_type, 6)
+            
+            factor_ages.append(age_hours)
+        
+        # Calculate decay factor based on average age
+        avg_age_hours = sum(factor_ages) / len(factor_ages) if factor_ages else 6
+        
+        # Base decay: 5% per hour, capped at 50% decay
+        base_decay = min(0.05 * avg_age_hours, 0.5)
+        
+        # Adjust decay based on market conditions
+        decay_multiplier = 1.0
+        if market_conditions:
+            if market_conditions.volatility_regime == "high":
+                # Faster decay in high volatility markets
+                decay_multiplier = 1.3
+            elif market_conditions.volatility_regime == "low":
+                # Slower decay in stable markets
+                decay_multiplier = 0.8
+            
+            if market_conditions.trend_strength == "strong":
+                # Slower decay in strong trends
+                decay_multiplier *= 0.9
+        
+        # Apply decay
+        total_decay = base_decay * decay_multiplier
+        decay_factor = 1.0 - total_decay
+        
+        # Apply decay to composite score (reduce magnitude)
+        if composite_score > 0:
+            composite_score *= decay_factor
+        elif composite_score < 0:
+            composite_score *= decay_factor
+        
+        if DEBUG_RECOMMENDATION_LOGGING:
+            logger.debug(f"Signal decay applied: avg_age={avg_age_hours:.1f}h, decay={total_decay:.2f}, factor={decay_factor:.2f}, new_score={composite_score:.3f}")
+        
+        return composite_score
+    
     def _calculate_volatility_and_trend(self, df: pd.DataFrame) -> Dict[str, float]:
         
         if len(df) < 20:
@@ -973,12 +1123,89 @@ class EnhancedRecommendationEngine:
             if DEBUG_RECOMMENDATION_LOGGING:
                 logger.debug(f"Monte Carlo alignment boost: +{mc_alignment * 0.1:.1f} (alignment: {mc_alignment:.1f})")
 
+        # Momentum-based confidence adjustments
+        momentum_boost = self._calculate_momentum_boost(factors, composite_score)
+        confidence_multiplier += momentum_boost
+        if DEBUG_RECOMMENDATION_LOGGING and momentum_boost != 0:
+            logger.debug(f"Momentum boost: {momentum_boost:+.2f}")
+
         final_confidence = min(1.0, avg_factor_confidence * consensus * confidence_multiplier)
 
         if DEBUG_RECOMMENDATION_LOGGING:
             logger.debug(f"Final confidence calculation: {avg_factor_confidence:.3f} * {consensus:.3f} * {confidence_multiplier:.3f} = {final_confidence:.3f}")
 
         return final_confidence
+
+    def _calculate_momentum_boost(self, factors: List[FactorAnalysis], composite_score: float) -> float:
+        """Calculate momentum-based confidence boost based on factor alignment and strength."""
+        
+        momentum_boost = 0.0
+        
+        # Calculate momentum factors from technical analysis
+        momentum_factors = [f for f in factors if f.factor_type == FactorType.TECHNICAL and 'momentum' in f.metadata]
+        if momentum_factors:
+            # Average momentum strength
+            avg_momentum = sum(f.strength for f in momentum_factors) / len(momentum_factors)
+            
+            # Boost confidence if momentum aligns with composite score
+            if (composite_score > 0 and avg_momentum > 0.3) or (composite_score < 0 and avg_momentum < -0.3):
+                momentum_boost += 0.15
+                if DEBUG_RECOMMENDATION_LOGGING:
+                    logger.debug(f"Momentum alignment boost: +0.15 (momentum: {avg_momentum:.3f})")
+            elif abs(avg_momentum) > 0.5:  # Strong momentum regardless of direction
+                momentum_boost += 0.08
+                if DEBUG_RECOMMENDATION_LOGGING:
+                    logger.debug(f"Strong momentum boost: +0.08 (momentum: {avg_momentum:.3f})")
+        
+        # Volume-based momentum confirmation
+        volume_factors = [f for f in factors if f.factor_type == FactorType.TECHNICAL and 'volume' in f.metadata]
+        if volume_factors:
+            avg_volume_strength = sum(f.strength for f in volume_factors) / len(volume_factors)
+            
+            # Volume confirmation boost
+            if abs(avg_volume_strength) > 0.4:
+                momentum_boost += 0.05
+                if DEBUG_RECOMMENDATION_LOGGING:
+                    logger.debug(f"Volume confirmation boost: +0.05 (volume: {avg_volume_strength:.3f})")
+        
+        # Trend strength momentum
+        trend_factors = [f for f in factors if f.factor_type == FactorType.TECHNICAL and 'trend' in f.metadata]
+        if trend_factors:
+            avg_trend_strength = sum(f.strength for f in trend_factors) / len(trend_factors)
+            
+            # Trend momentum boost
+            if abs(avg_trend_strength) > 0.6:
+                momentum_boost += 0.10
+                if DEBUG_RECOMMENDATION_LOGGING:
+                    logger.debug(f"Trend momentum boost: +0.10 (trend: {avg_trend_strength:.3f})")
+        
+        # Multi-timeframe momentum convergence
+        timeframe_momentum = {}
+        for factor in factors:
+            if factor.factor_type == FactorType.TECHNICAL and 'timeframe' in factor.metadata:
+                timeframe = factor.metadata['timeframe']
+                if timeframe not in timeframe_momentum:
+                    timeframe_momentum[timeframe] = []
+                timeframe_momentum[timeframe].append(factor.strength)
+        
+        if len(timeframe_momentum) >= 3:  # At least 3 timeframes
+            # Calculate momentum alignment across timeframes
+            timeframe_consensus = 0
+            for timeframe, strengths in timeframe_momentum.items():
+                avg_strength = sum(strengths) / len(strengths) if strengths else 0
+                if (composite_score > 0 and avg_strength > 0.2) or (composite_score < 0 and avg_strength < -0.2):
+                    timeframe_consensus += 1
+            
+            consensus_ratio = timeframe_consensus / len(timeframe_momentum)
+            if consensus_ratio > 0.7:  # Strong consensus across timeframes
+                momentum_boost += 0.12
+                if DEBUG_RECOMMENDATION_LOGGING:
+                    logger.debug(f"Multi-timeframe consensus boost: +0.12 (consensus: {consensus_ratio:.2f})")
+        
+        # Cap momentum boost to avoid overconfidence
+        momentum_boost = min(momentum_boost, 0.25)
+        
+        return momentum_boost
 
     def _generate_decision_reasoning(self, action: str, composite_score: float, factors: List[FactorAnalysis], weights: Dict[FactorType, float]) -> str:
         
@@ -1040,9 +1267,9 @@ def _rank_buy_candidates(final_recommendations: Dict[str, Dict[str, Any]]) -> Di
 
 
 def final_recommendation_agent(state: State) -> State:
+    """EnsembleActor: Generate final recommendations."""
+    logger.info("EnsembleActor started")
     
-    logging.info("Starting final recommendation agent")
-
     stock_data = state.get("stock_data", {})
     final_recommendations = {}
 
@@ -1060,7 +1287,7 @@ def final_recommendation_agent(state: State) -> State:
             recommendation = _generate_recommendation(symbol, technical, fundamental, sentiment, risk, macro, state)
 
             final_recommendations[symbol] = recommendation
-            logger.info(f"Generated recommendation for {symbol}")
+            logger.info(f"EnsembleActor generated recommendation for {symbol}: {recommendation.get('action', 'HOLD')} (confidence: {recommendation.get('confidence', 0):.2f})")
 
         except Exception as e:
             logger.error(f"Error generating recommendation for {symbol}: {e}")
@@ -1100,6 +1327,8 @@ def final_recommendation_agent(state: State) -> State:
     # Common state updates
     state["llm_reasoning"] = {symbol: rec.get("llm_reasoning") for symbol, rec in state["final_recommendation"].items()}
     state["all_recommendations"] = final_recommendations  # Keep all for reference
+    symbols = list(stock_data.keys())
+    logger.info(f"EnsembleActor completed for {len(symbols)} symbols: {symbols}")
     return state
 
 
@@ -1119,6 +1348,9 @@ def _generate_recommendation(
 
         # Step 2: Assess market conditions
         market_conditions = _engine.assess_market_conditions(factors)
+        
+        # Store current market conditions for regime adaptation
+        _engine.current_market_conditions = market_conditions
 
         # Step 3: Calculate dynamic weights
         dynamic_weights = _engine.calculate_dynamic_weights(factors, market_conditions)
@@ -1345,10 +1577,11 @@ def _calculate_scores(technical, fundamental, sentiment, risk, macro) -> Dict[st
 
 def _determine_action(composite_score: float) -> tuple[str, int]:
     
-    if composite_score > 0.4:
+    # Optimized thresholds for more decisive trading
+    if composite_score > 0.25:  # Reduced from 0.4
         action = "BUY"
         confidence = min(100, int(50 + composite_score * 50))
-    elif composite_score < -0.6:
+    elif composite_score < -0.35:  # Reduced from -0.6
         action = "SELL"
         confidence = min(100, int(50 + abs(composite_score) * 50))
     else:
@@ -1373,7 +1606,15 @@ def _get_llm_reasoning(
     try:
         prompt_template = PromptTemplate(
             input_variables=["action", "technicals", "fundamentals", "sentiment", "risk", "macro"],
-            template=
+            template="""Based on the following analysis for swing trading:
+Action: {action}
+Technical Analysis: {technicals}
+Fundamental Analysis: {fundamentals}
+Sentiment Analysis: {sentiment}
+Risk Assessment: {risk}
+Macro Environment: {macro}
+
+Provide a detailed reasoning for the recommended action, highlighting key factors and potential risks."""
         )
 
         chain = prompt_template | _llm
@@ -1415,7 +1656,16 @@ def _get_enhanced_llm_reasoning(
 
         prompt_template = PromptTemplate(
             input_variables=["symbol", "action", "confidence", "composite_score", "factors", "market_conditions"],
-            template=
+            template="""For {symbol}:
+Action: {action} (Confidence: {confidence:.1f}%)
+Composite Score: {composite_score:.2f}
+
+Factor Analysis:
+{factors}
+
+{market_conditions}
+
+Provide a comprehensive analysis explaining the recommendation, key supporting factors, and potential risks."""
         )
 
         chain = prompt_template | _llm

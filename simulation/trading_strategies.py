@@ -617,7 +617,8 @@ class EnsembleStrategy(BaseStrategy):
         super().__init__(config)
         self.strategies = config.parameters.get('strategies', [])
         self.weights = config.parameters.get('weights', {})
-        self.confidence_threshold = config.parameters.get('confidence_threshold', ENSEMBLE_THRESHOLD)
+        # Reduced threshold for more active trading
+        self.confidence_threshold = config.parameters.get('confidence_threshold', 0.45)  # Reduced from 0.5
 
     def generate_signals(
         self,
@@ -672,34 +673,52 @@ class EnsembleStrategy(BaseStrategy):
         if not signals:
             return {'action': 'HOLD', 'confidence': 0.0}
 
-        # Count votes for each action
+        # Count votes for each action with enhanced weighting
         buy_votes = 0
         sell_votes = 0
         total_weight = 0
+        strong_buy_signals = 0
+        strong_sell_signals = 0
 
         for signal, weight in zip(signals, weights):
+            # Enhanced weighting based on signal confidence
+            enhanced_weight = weight * (0.5 + signal.confidence * 0.5)
+            
             if signal.action == 'BUY':
-                buy_votes += weight
+                buy_votes += enhanced_weight
+                if signal.confidence > 0.7:
+                    strong_buy_signals += 1
             elif signal.action == 'SELL':
-                sell_votes += weight
-            total_weight += weight
+                sell_votes += enhanced_weight
+                if signal.confidence > 0.7:
+                    strong_sell_signals += 1
+            total_weight += enhanced_weight
 
-        # Determine ensemble action
-        if buy_votes > sell_votes:
+        # Enhanced decision logic with reduced HOLD bias
+        if buy_votes > sell_votes * 1.2 or strong_buy_signals >= 2:  # 20% advantage or 2+ strong signals
             action = 'BUY'
-            confidence = buy_votes / total_weight if total_weight > 0 else 0.5
-        elif sell_votes > buy_votes:
+            confidence = min(buy_votes / total_weight * 1.1, 0.9) if total_weight > 0 else 0.6
+        elif sell_votes > buy_votes * 1.2 or strong_sell_signals >= 2:  # 20% advantage or 2+ strong signals
             action = 'SELL'
-            confidence = sell_votes / total_weight if total_weight > 0 else 0.5
+            confidence = min(sell_votes / total_weight * 1.1, 0.9) if total_weight > 0 else 0.6
+        elif abs(buy_votes - sell_votes) > total_weight * 0.15:  # 15% difference threshold
+            if buy_votes > sell_votes:
+                action = 'BUY'
+                confidence = buy_votes / total_weight if total_weight > 0 else 0.5
+            else:
+                action = 'SELL'
+                confidence = sell_votes / total_weight if total_weight > 0 else 0.5
         else:
             action = 'HOLD'
-            confidence = 0.5
+            confidence = 0.4  # Reduced confidence for HOLD to encourage more decisive signals
 
         return {
             'action': action,
             'confidence': confidence,
             'buy_votes': buy_votes,
-            'sell_votes': sell_votes
+            'sell_votes': sell_votes,
+            'strong_buy_signals': strong_buy_signals,
+            'strong_sell_signals': strong_sell_signals
         }
 
     def validate_signal(self, signal: TradingSignal, data: pd.DataFrame) -> bool:

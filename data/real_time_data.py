@@ -321,7 +321,7 @@ class RealTimeDataManager:
             base_symbol = symbol.split('.')[0]
             url = f"https://www.moneycontrol.com/india/stockpricequote/{base_symbol}"
 
-            response = await asyncio.get_event_loop().run_in_executor(
+            response = await asyncio.get_running_loop().run_in_executor(
                 None, rate_limited_get, url
             )
 
@@ -354,7 +354,7 @@ class RealTimeDataManager:
             base_symbol = symbol.split('.')[0]
             url = f"https://www.bseindia.com/stock-share-price/{base_symbol}"
 
-            response = await asyncio.get_event_loop().run_in_executor(
+            response = await asyncio.get_running_loop().run_in_executor(
                 None, rate_limited_get, url
             )
 

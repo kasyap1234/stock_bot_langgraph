@@ -4,6 +4,7 @@ import logging
 from typing import Dict, List, Any
 import pandas as pd
 import os
+import numpy as np
 
 from config.config import (
     RSI_OVERBOUGHT, RSI_OVERSOLD, CONFIRMATION_THRESHOLD,
@@ -17,10 +18,12 @@ from config.config import (
     HA_CONFLUENCE_BARS, HA_TFS, GARCH_P, GARCH_Q, FORECAST_HORIZON,
     HARMONIC_PATTERNS, TOLERANCE, LOOKBACK, MIN_CONFIDENCE,
     HMM_STATES, HMM_ITER, LSTM_EPOCHS, LSTM_BATCH, LSTM_WINDOW, LSTM_FEATURES,
-    MC_VA_PATHS, VA_CONFIDENCE, STRESS_SCENARIOS
+    MC_VA_PATHS, VA_CONFIDENCE, STRESS_SCENARIOS,
+    INDIA_SPECIFIC_PARAMS
 )
 from data.models import State
 from utils.error_handling import retry_indicator_calculation
+from data.quality_validator import validate_data, InsufficientDataError, ConstantPriceError
 
 logger = logging.getLogger(__name__)
 
@@ -288,114 +291,100 @@ class RiskAdjuster:
 
 
 class EnsembleSignalGenerator:
-    
-
+    """
+    Generates a unified signal by combining weighted outputs from multiple indicators.
+    This simplified version focuses on a core set of reliable indicators to reduce noise.
+    """
     def __init__(self):
+        # Simplified, more robust set of base weights
         self.base_weights = {
-            'RSI': 0.12,
-            'MACD': 0.12,
-            'SMA': 0.08,
-            'EMA': 0.08,
-            'Bollinger': 0.08,
-            'Stochastic': 0.08,
-            'WilliamsR': 0.10,
-            'CCI': 0.10,
-            'OBV': 0.10,
-            'VWAP': 0.10,
-            'PivotPoints': 0.10,
-            'TrendStrength': 0.04,
-            'Ichimoku': 0.08,
-            'Fibonacci': 0.06,
-            'SupportResistance': 0.06,
-            'MLSignal': 0.14,  # Higher weight for ML predictions
-            'VPVR': 0.08,       # Phase 1: Volume Profile
-            'HeikinAshi': 0.07,  # Phase 1: Heikin-Ashi
-            'Harmonic': 0.10,    # Phase 2: Harmonic patterns
-            'HMM': 0.12,         # Phase 2: HMM regime detection
-            'LSTM': 0.15,        # Phase 3: LSTM deep learning prediction
-            'Patterns': 0.10     # Pattern recognition
+            'RSI': 0.15,
+            'MACD': 0.15,
+            'Bollinger': 0.10,
+            'Stochastic': 0.10,
+            'TrendStrength': 0.10, # ADX-based
+            'Ichimoku': 0.15,
+            'VolumeProfile': 0.10, # VPVR-based signal
+            'Regime': 0.15, # HMM-based regime
         }
-        self.advanced_indicators = ['WilliamsR', 'CCI', 'OBV', 'VWAP', 'PivotPoints', 'Patterns']
-        self.performance_history = {}  # Track indicator performance
+        self.performance_history = {} # For future self-adaptive weighting
 
-    def update_weights_dynamically(self, df: pd.DataFrame, signals: Dict[str, str]):
-        
+    def _update_weights_dynamically(self, df: pd.DataFrame, signals: Dict[str, str]) -> Dict[str, float]:
+        """
+        Adjusts indicator weights based on market conditions like trend and volatility.
+        """
         if len(df) < 20:
             return self.base_weights.copy()
 
         weights = self.base_weights.copy()
-
-        # Adjust weights based on trend strength
+        
+        # 1. Trend Adjustment
         trend_scorer = TrendStrengthScorer()
-        trend_score = trend_scorer.score_trend_strength(df)
+        trend_score = trend_scorer.score_trend_strength(df) # 0 to 1
+        
+        if trend_score > 0.7:  # Strong trending market
+            weights['MACD'] *= 1.2
+            weights['TrendStrength'] *= 1.2
+            weights['RSI'] *= 0.8 # Reduce weight of oscillators
+        elif trend_score < 0.3:  # Ranging market
+            weights['RSI'] *= 1.2
+            weights['Bollinger'] *= 1.2
+            weights['Stochastic'] *= 1.2
+            weights['MACD'] *= 0.8 # Reduce weight of trend followers
 
-        if trend_score > 0.7:  # Strong trend
-            # Increase weight for trend-following indicators
-            trend_indicators = ['SMA', 'EMA', 'MACD', 'TrendStrength']
-            for indicator in trend_indicators:
-                if indicator in weights:
-                    weights[indicator] *= 1.2
-        elif trend_score < 0.3:  # Weak trend
-            # Increase weight for mean-reversion indicators
-            mr_indicators = ['RSI', 'Stochastic', 'WilliamsR', 'Bollinger']
-            for indicator in mr_indicators:
-                if indicator in weights:
-                    weights[indicator] *= 1.2
-
-        # Adjust based on volatility
+        # 2. Volatility Adjustment
         adaptive_calc = AdaptiveParameterCalculator()
-        atr = adaptive_calc.calculate_atr(df)
-        if len(atr) > 0 and not pd.isna(atr.iloc[-1]):
-            volatility = atr.iloc[-1] / df['Close'].iloc[-1]
-            if volatility > ADAPTIVE_THRESHOLDS['high_volatility']:
-                # Reduce weights for less reliable indicators in high volatility
-                for indicator in weights:
-                    if indicator not in ['TrendStrength', 'SupportResistance']:
-                        weights[indicator] *= 0.9
+        atr_normalized = adaptive_calc.calculate_atr(df, period=14).iloc[-1] / df['Close'].iloc[-1]
+        
+        if atr_normalized > ADAPTIVE_THRESHOLDS.get('high_volatility', 0.03): # High volatility
+            # In high volatility, prefer signals that provide clear levels
+            weights['Ichimoku'] *= 1.1
+            weights['VolumeProfile'] *= 1.1
+            weights['MACD'] *= 0.9 # MACD can be choppy
 
-        # Normalize weights
+        # 3. Normalize weights to sum to 1
         total_weight = sum(weights.values())
         if total_weight > 0:
-            weights = {k: v / total_weight for k, v in weights.items()}
+            return {k: v / total_weight for k, v in weights.items()}
+        return self.base_weights
 
-        return weights
-
-    def generate_ensemble_signal(self, signals: Dict[str, str], df: pd.DataFrame = None, risk_adjustment: float = 0.0) -> str:
+    def generate_ensemble_signal(self, signals: Dict[str, str], df: pd.DataFrame, risk_adjustment: float = 0.0) -> Dict[str, Any]:
+        """
+        Calculates the final weighted score and generates a buy/sell/neutral signal.
+        """
+        weights = self._update_weights_dynamically(df, signals)
         
-        if df is not None:
-            weights = self.update_weights_dynamically(df, signals)
-        else:
-            weights = self.base_weights
-
         score = 0.0
-        total_weight = 0.0
+        contributing_signals = {}
 
         for indicator, signal in signals.items():
             if indicator in weights:
                 weight = weights[indicator]
-                # Apply 2x weighting for advanced indicators
-                if indicator in self.advanced_indicators:
-                    weight *= 2
                 if signal == "buy":
                     score += weight
+                    contributing_signals[indicator] = weight
                 elif signal == "sell":
                     score -= weight
-                total_weight += weight
-
-        if total_weight == 0:
-            return "neutral"
-
-        # Apply risk adjustment (Phase 3)
+                    contributing_signals[indicator] = -weight
+        
+        # Apply risk adjustment (e.g., from VaR model)
+        # A negative adjustment makes a 'buy' less likely and 'sell' more likely
         score += risk_adjustment
 
-        normalized_score = score / total_weight
-
-        if normalized_score > ENSEMBLE_THRESHOLD:
-            return "buy"
-        elif normalized_score < -ENSEMBLE_THRESHOLD:
-            return "sell"
+        # Determine final signal based on the composite score
+        if score > ENSEMBLE_THRESHOLD:
+            final_signal = "buy"
+        elif score < -ENSEMBLE_THRESHOLD:
+            final_signal = "sell"
         else:
-            return "neutral"
+            final_signal = "neutral"
+            
+        return {
+            "signal": final_signal,
+            "score": score,
+            "contributing_signals": contributing_signals,
+            "weights": weights
+        }
 
 
 class TrendStrengthScorer:
@@ -1379,7 +1368,7 @@ class HMMRegimeDetector:
 
         # Filter invalid data rows
         mask = (
-            (df['Close'] > 0) &
+            (df['Close'] >= 0) &  # Allow zero prices
             (df['Volume'] >= 0) &
             (df['High'] >= df['Low']) &
             (df['High'] >= df['Close']) &
@@ -1394,7 +1383,7 @@ class HMMRegimeDetector:
         logger.info(f"Starting feature preparation for DataFrame shape: {df.shape}")
 
         # Returns
-        returns = df['Close'].pct_change().replace([np.inf, -np.inf], 0).fillna(0).clip([-0.5, 0.5])
+        returns = df['Close'].pct_change().replace([np.inf, -np.inf], 0).fillna(0).clip(-0.5, 0.5)
         features['returns'] = returns
         logger.info(f"After returns calculation: shape={len(returns)}, inf={np.isinf(returns).any()}, nan={returns.isna().any()}, min={returns.min()}, max={returns.max()}")
 
@@ -1402,17 +1391,18 @@ class HMMRegimeDetector:
         atr = talib.ATR(df['High'], df['Low'], df['Close'], timeperiod=14).fillna(0).replace([np.inf, -np.inf], 0)
         close_prev = df['Close'].shift(1).fillna(df['Close'].mean())
         vol = atr / close_prev.replace(0, 1e-8)  # Ensure denominator >0
-        vol = vol.replace([np.inf, -np.inf], 0.01).fillna(0.01).clip([0.001, 1.0])
+        vol = vol.replace([np.inf, -np.inf], 0.01).fillna(0.01).clip(0.001, 1.0)
         features['vol'] = vol
         logger.info(f"After volatility calculation: shape={len(vol)}, inf={np.isinf(vol).any()}, nan={vol.isna().any()}, min={vol.min()}, max={vol.max()}")
 
         # Volume
-        vol_log = np.log1p(df['Volume'].fillna(1).clip(lower=0)).replace([np.inf, -np.inf], 0).clip([0, 15])  # Lower clip for banking stock.
+        vol_log = np.log1p(df['Volume'].fillna(1).clip(lower=0)).replace([np.inf, -np.inf], 0).clip(0, 15)  # Lower clip for banking stock.
         features['vol_log'] = vol_log
         logger.info(f"After volume_log calculation: shape={len(vol_log)}, inf={np.isinf(vol_log).any()}, nan={vol_log.isna().any()}, min={vol_log.min()}, max={vol_log.max()}")
 
         # Features
         features = pd.concat([returns, vol, vol_log], axis=1).dropna().replace([np.inf, -np.inf], 0).fillna(0).astype('float64')
+        features.columns = ['returns', 'vol', 'vol_log']
 
         # Final assert
         if not np.isfinite(features).all().all():
@@ -1957,190 +1947,6 @@ class EnhancedVaRCalculator(BacktestValidator):
         return state
 
 
-class HarmonicPatternDetector:
-    
-
-    def __init__(self, lookback: int = LOOKBACK, tolerance: float = TOLERANCE, min_confidence: float = MIN_CONFIDENCE):
-        self.lookback = lookback
-        self.tolerance = tolerance
-        self.min_confidence = min_confidence
-        self.patterns_detected = []
-
-    def detect_peaks_troughs(self, df: pd.DataFrame) -> tuple:
-        
-        if not SCIPY_AVAILABLE:
-            logger.warning("scipy not available for peak detection")
-            return [], []
-
-        if len(df) < self.lookback:
-            return [], []
-
-        # Use recent data for pattern detection
-        recent_df = df.tail(self.lookback)
-        prices = recent_df['Close'].values
-
-        # Find peaks (local maxima)
-        peaks, _ = find_peaks(prices, prominence=0.01 * prices.mean(), distance=5)
-        # Find troughs (local minima) by inverting the signal
-        troughs, _ = find_peaks(-prices, prominence=0.01 * prices.mean(), distance=5)
-
-        return peaks, troughs
-
-    def validate_gartley_pattern(self, points: list) -> tuple[str, float]:
-        
-        if len(points) < 5:
-            return "neutral", 0.0
-
-        # Extract price levels
-        x, a, b, c, d = points
-
-        # Calculate ratios
-        xa = abs(a - x)
-        ab = abs(b - a)
-        bc = abs(c - b)
-        cd = abs(d - c)
-
-        if xa == 0:
-            return "neutral", 0.0
-
-        # Gartley bullish ratios
-        ab_xa_ratio = ab / xa
-        bc_ab_ratio = bc / ab if ab != 0 else 0
-        cd_ab_ratio = cd / ab if ab != 0 else 0
-
-        # Check bullish Gartley ratios
-        ab_ratio_ok = abs(ab_xa_ratio - 0.618) <= self.tolerance
-        bc_ratio_ok = 0.382 <= bc_ab_ratio <= 0.886
-        cd_ratio_ok = abs(cd_ab_ratio - 1.272) <= self.tolerance * 2  # More tolerance for CD
-
-        if ab_ratio_ok and bc_ratio_ok and cd_ratio_ok:
-            confidence = (1 - abs(ab_xa_ratio - 0.618) / 0.618 +
-                         1 - abs(bc_ab_ratio - 0.618) / 0.618 +
-                         1 - abs(cd_ab_ratio - 1.272) / 1.272) / 3
-            return "buy", min(confidence, 1.0)
-
-        # Gartley bearish ratios (inverted)
-        ab_xa_ratio_inv = ab / xa
-        bc_ab_ratio_inv = bc / ab if ab != 0 else 0
-        cd_ab_ratio_inv = cd / ab if ab != 0 else 0
-
-        ab_ratio_ok_inv = abs(ab_xa_ratio_inv - 0.618) <= self.tolerance
-        bc_ratio_ok_inv = 0.382 <= bc_ab_ratio_inv <= 0.886
-        cd_ratio_ok_inv = abs(cd_ab_ratio_inv - 1.272) <= self.tolerance * 2
-
-        if ab_ratio_ok_inv and bc_ratio_ok_inv and cd_ratio_ok_inv:
-            confidence = (1 - abs(ab_xa_ratio_inv - 0.618) / 0.618 +
-                         1 - abs(bc_ab_ratio_inv - 0.618) / 0.618 +
-                         1 - abs(cd_ab_ratio_inv - 1.272) / 1.272) / 3
-            return "sell", min(confidence, 1.0)
-
-        return "neutral", 0.0
-
-    def validate_butterfly_pattern(self, points: list) -> tuple[str, float]:
-        
-        if len(points) < 5:
-            return "neutral", 0.0
-
-        x, a, b, c, d = points
-
-        xa = abs(a - x)
-        ab = abs(b - a)
-        bc = abs(c - b)
-        cd = abs(d - c)
-
-        if xa == 0:
-            return "neutral", 0.0
-
-        # Butterfly bullish ratios
-        ab_xa_ratio = ab / xa
-        bc_ab_ratio = bc / ab if ab != 0 else 0
-        cd_ab_ratio = cd / ab if ab != 0 else 0
-
-        ab_ratio_ok = abs(ab_xa_ratio - 0.786) <= self.tolerance
-        bc_ratio_ok = 0.382 <= bc_ab_ratio <= 0.886
-        cd_ratio_ok = abs(cd_ab_ratio - 1.618) <= self.tolerance * 2
-
-        if ab_ratio_ok and bc_ratio_ok and cd_ratio_ok:
-            confidence = (1 - abs(ab_xa_ratio - 0.786) / 0.786 +
-                         1 - abs(bc_ab_ratio - 0.618) / 0.618 +
-                         1 - abs(cd_ab_ratio - 1.618) / 1.618) / 3
-            return "buy", min(confidence, 1.0)
-
-        # Butterfly bearish ratios
-        ab_ratio_ok_inv = abs(ab_xa_ratio - 0.786) <= self.tolerance
-        bc_ratio_ok_inv = 0.382 <= bc_ab_ratio <= 0.886
-        cd_ratio_ok_inv = abs(cd_ab_ratio - 1.618) <= self.tolerance * 2
-
-        if ab_ratio_ok_inv and bc_ratio_ok_inv and cd_ratio_ok_inv:
-            confidence = (1 - abs(ab_xa_ratio - 0.786) / 0.786 +
-                         1 - abs(bc_ab_ratio - 0.618) / 0.618 +
-                         1 - abs(cd_ab_ratio - 1.618) / 1.618) / 3
-            return "sell", min(confidence, 1.0)
-
-        return "neutral", 0.0
-
-    def detect_patterns(self, df: pd.DataFrame) -> tuple[str, float]:
-        
-        if len(df) < self.lookback:
-            return "neutral", 0.0
-
-        peaks, troughs = self.detect_peaks_troughs(df)
-
-        if len(peaks) < 2 or len(troughs) < 2:
-            return "neutral", 0.0
-
-        # Get recent data for pattern analysis
-        recent_df = df.tail(self.lookback)
-        prices = recent_df['Close'].values
-
-        # Try to find Gartley patterns
-        for i in range(max(0, len(peaks) - 3)):
-            for j in range(max(0, len(troughs) - 3)):
-                try:
-                    # Construct potential pattern points
-                    pattern_points = [
-                        prices[peaks[i]],
-                        prices[troughs[j]],
-                        prices[peaks[i+1]],
-                        prices[troughs[j+1]],
-                        prices[peaks[i+2]]
-                    ]
-
-                    signal, confidence = self.validate_gartley_pattern(pattern_points)
-                    if signal != "neutral" and confidence >= self.min_confidence:
-                        logger.info(f"Gartley pattern detected: {signal} with confidence {confidence:.2f}")
-                        return signal, confidence
-
-                except (IndexError, TypeError):
-                    continue
-
-        # Try to find Butterfly patterns
-        for i in range(max(0, len(peaks) - 3)):
-            for j in range(max(0, len(troughs) - 3)):
-                try:
-                    pattern_points = [
-                        prices[peaks[i]],
-                        prices[troughs[j]],
-                        prices[peaks[i+1]],
-                        prices[troughs[j+1]],
-                        prices[peaks[i+2]]
-                    ]
-
-                    signal, confidence = self.validate_butterfly_pattern(pattern_points)
-                    if signal != "neutral" and confidence >= self.min_confidence:
-                        logger.info(f"Butterfly pattern detected: {signal} with confidence {confidence:.2f}")
-                        return signal, confidence
-
-                except (IndexError, TypeError):
-                    continue
-
-        return "neutral", 0.0
-
-    def get_harmonic_signal(self, df: pd.DataFrame) -> str:
-        
-        signal, confidence = self.detect_patterns(df)
-        return signal if confidence >= self.min_confidence else "neutral"
-
 class ParameterOptimizer:
     
 
@@ -2469,10 +2275,14 @@ class DataValidator:
         if invalid_close_range > 0:
             issues.append(f"{invalid_close_range} rows have Close outside High-Low range")
 
-        # Check for negative values
-        negative_prices = (df[['Open', 'High', 'Low', 'Close']] < 0).any(axis=1).sum()
+        # Check for negative values (only for prices that shouldn't be negative)
+        negative_prices = (df[['High', 'Low', 'Close']] < 0).any(axis=1).sum()
         if negative_prices > 0:
             issues.append(f"{negative_prices} rows have negative prices")
+        # Open price can be zero in some cases (e.g., suspended stocks)
+        negative_open = (df['Open'] < 0).sum()
+        if negative_open > 0:
+            issues.append(f"{negative_open} rows have negative open prices")
 
         negative_volume = (df['Volume'] < 0).sum()
         if negative_volume > 0:
@@ -2866,284 +2676,119 @@ class PatternRecognition:
             return "sell", min(overall_conf, 1.0)
         else:
             return "neutral", overall_conf
-def technical_analysis_agent(state: State) -> State:
-    
-    logging.info("Starting enhanced technical analysis agent")
+class TechnicalAnalysisPipeline:
+    """
+    A modular pipeline for running a simplified, robust technical analysis workflow.
+    """
+    def __init__(self):
+        self.data_validator = DataValidator()
+        self.adaptive_calc = AdaptiveParameterCalculator()
+        self.ichimoku = IchimokuCloud()
+        self.vpvr = VPVRProfile()
+        self.hmm = HMMRegimeDetector()
+        self.trend_scorer = TrendStrengthScorer()
+        self.ensemble_gen = EnsembleSignalGenerator()
 
-    stock_data = state.get("stock_data", {})
-    technical_signals = {}
+    def run(self, state: State) -> State:
+        """
+        Executes the full technical analysis pipeline for each stock.
+        """
+        stock_data = state.get("stock_data", {})
+        all_technical_signals = {}
 
-    # Initialize advanced analyzers
-    multi_tf = MultiTimeframeAnalyzer()
-    confirmer = SignalConfirmer()
-    adaptive_calc = AdaptiveParameterCalculator()
-    risk_adjuster = RiskAdjuster()
-    ensemble_gen = EnsembleSignalGenerator()
-    trend_scorer = TrendStrengthScorer()
-    vol_adjuster = VolatilityAdjuster()
-    prob_scorer = ProbabilityScorer()
-    backtest_validator = BacktestValidator()
-    data_validator = DataValidator()
+        for symbol, df in stock_data.items():
+            try:
+                is_valid, df_cleaned, validation_info = self.data_validator.validate_dataframe(df, symbol)
+                
+                if not is_valid:
+                    logger.warning(f"Skipping {symbol} due to data validation failures.")
+                    all_technical_signals[symbol] = {
+                        "error": "Data validation failed",
+                        "validation_info": validation_info
+                    }
+                    continue
+                
+                # Core signal generation
+                try:
+                    # Convert DataFrame to HistoricalData format if needed
+                    if isinstance(df_cleaned, pd.DataFrame):
+                        historical_data = df_cleaned.reset_index().to_dict('records')
+                        historical_data = [record for record in historical_data if isinstance(record, dict)]
+                    else:
+                        historical_data = df_cleaned
+                    validate_data(historical_data)
+                except (InsufficientDataError, ConstantPriceError) as e:
+                    logger.warning(f"Data validation failed for {symbol}: {e}")
+                    all_technical_signals[symbol] = {
+                        "error": str(e),
+                        "validation_info": validation_info
+                    }
+                    continue
 
-    # Initialize new advanced analyzers
-    ichimoku = IchimokuCloud()
-    fibonacci = FibonacciRetracement()
-    sr_calculator = SupportResistanceCalculator()
-    ml_predictor = MLSignalPredictor()
-    optimizer = ParameterOptimizer()
-
-    # Initialize Phase 1 advanced technical analyzers
-    vpvr_profile = VPVRProfile()
-    heikin_ashi = HeikinAshiTransformer()
-    # Initialize Phase 2 advanced technical analyzers
-    harmonic_detector = HarmonicPatternDetector()
-    hmm_detector = HMMRegimeDetector()
-    garch_forecaster = GARCHForecaster()
-    # Initialize Phase 3 advanced technical analyzers
-    lstm_predictor = LSTMPredictor()
-    var_calculator = EnhancedVaRCalculator()
-
-    for symbol, df in stock_data.items():
-        try:
-            enhanced_signals = {}
-
-            # Validate and clean data at entry point
-            is_valid, df_cleaned, validation_info = data_validator.validate_dataframe(df, symbol)
-            enhanced_signals["DataValidation"] = validation_info
-
-            # Skip processing if data is invalid
-            if not is_valid:
-                logger.warning(f"Skipping {symbol} due to data validation failures")
-                technical_signals[symbol] = {
-                    "error": "Data validation failed",
+                signals = self._calculate_core_signals(df_cleaned, symbol)
+                
+                # Ensembling and final decision
+                ensemble_result = self.ensemble_gen.generate_ensemble_signal(signals, df_cleaned)
+                
+                final_signals = {
+                    "ensemble_signal": ensemble_result['signal'],
+                    "ensemble_score": ensemble_result['score'],
+                    "contributing_signals": ensemble_result['contributing_signals'],
+                    "raw_signals": signals,
                     "validation_info": validation_info
                 }
-                continue
+                
+                all_technical_signals[symbol] = final_signals
+                logger.info(f"Successfully generated technical analysis for {symbol}")
 
-            # Use validated and cleaned data
-            df = df_cleaned
+            except Exception as e:
+                logger.error(f"Unhandled error in technical analysis pipeline for {symbol}: {e}", exc_info=True)
+                all_technical_signals[symbol] = {"error": str(e)}
 
-            if TALIB_AVAILABLE and not df.empty:
-                # Use adaptive parameters
-                rsi_period = adaptive_calc.adaptive_rsi_period(df)
-                signals = _calculate_technical_indicators_with_retry(
-                    df, rsi_period=rsi_period, symbol=symbol, use_talib=True
-                )
-            else:
-                signals = _calculate_technical_indicators_with_retry(
-                    df, symbol=symbol, use_talib=False
-                )
+        return {"technical_signals": all_technical_signals}
 
-            # Multi-timeframe analysis
-            if len(df) >= 50:  # Need enough data for resampling
-                mtf_func = lambda df_tf: _calculate_technical_indicators_with_retry(
-                    df_tf, symbol=symbol, use_talib=TALIB_AVAILABLE
-                )
-                mtf_signals = multi_tf.analyze_multi_timeframe(df, mtf_func)
-                signals.update(mtf_signals)
+    def _calculate_core_signals(self, df: pd.DataFrame, symbol: str) -> Dict[str, str]:
+        """
+        Calculates a focused set of technical indicators.
+        """
+        signals = {}
+        
+        # 1. Basic Indicators (RSI, MACD, etc.)
+        rsi_period = self.adaptive_calc.adaptive_rsi_period(df)
+        base_signals = _calculate_technical_indicators_with_retry(
+            df, rsi_period=rsi_period, symbol=symbol, use_talib=TALIB_AVAILABLE
+        )
+        signals.update(base_signals)
+        
+        # 2. Ichimoku Cloud
+        signals['Ichimoku'] = self.ichimoku.get_ichimoku_signal(df)
+        
+        # 3. Volume Profile (VPVR)
+        signals['VolumeProfile'] = self.vpvr.get_vpvr_signal(df)
+        
+        # 4. HMM Regime Detection
+        features = self.hmm.prepare_features(df)
+        if not features.empty:
+            regime, conf = self.hmm.fit_hmm_model(features, df)
+            signals['Regime'] = regime.replace('_regime', '') if conf > 0.5 else 'neutral'
+        else:
+            signals['Regime'] = 'neutral'
+            
+        # 5. Trend Strength
+        signals['TrendStrength'] = "strong" if self.trend_scorer.score_trend_strength(df) > 0.6 else "weak"
+        
+        return signals
 
-            # Signal confirmation
-            confirmed_signals = confirmer.confirm_signals(signals)
-            enhanced_signals.update(confirmed_signals)
-
-            # Trend strength scoring
-            trend_score = trend_scorer.score_trend_strength(df)
-            enhanced_signals["TrendStrengthScore"] = trend_score
-
-            # Dynamic ensemble signal with new indicators and risk adjustment
-            risk_adjustment = enhanced_signals.get("RiskAdjustment", 0.0)
-            ensemble_signal = ensemble_gen.generate_ensemble_signal(signals, df, risk_adjustment)
-            enhanced_signals["EnsembleSignal"] = ensemble_signal
-            enhanced_signals["EnsembleScoreWithRisk"] = ensemble_signal  # For tracking
-
-            # New advanced indicators
-            ichimoku_signal = ichimoku.get_ichimoku_signal(df)
-            signals["Ichimoku"] = ichimoku_signal
-            enhanced_signals["IchimokuSignal"] = ichimoku_signal
-
-            fib_signal = fibonacci.get_fib_signal(df)
-            signals["Fibonacci"] = fib_signal
-            enhanced_signals["FibonacciSignal"] = fib_signal
-
-            sr_signal = sr_calculator.get_sr_signal(df)
-            signals["SupportResistance"] = sr_signal
-            enhanced_signals["SRSignal"] = sr_signal
-
-            # ML-based signal prediction
-            if len(df) >= 50:  # Need sufficient data for ML training
-                ml_trained = ml_predictor.train_model(df, signals)
-                if ml_trained:
-                    ml_signal = ml_predictor.predict_signal(df, signals)
-                    signals["MLSignal"] = ml_signal
-                    enhanced_signals["MLSignal"] = ml_signal
-                    enhanced_signals["MLFeatureImportance"] = ml_predictor.get_feature_importance()
-                else:
-                    signals["MLSignal"] = "neutral"
-                    enhanced_signals["MLSignal"] = "neutral"
-            else:
-                signals["MLSignal"] = "neutral"
-                enhanced_signals["MLSignal"] = "neutral"
-
-            # Phase 1 Advanced Technical Analysis Features
-            if ENABLE_ADVANCED_TECH:
-                try:
-                    # VPVR Analysis
-                    vpvr_signal = vpvr_profile.get_vpvr_signal(df)
-                    signals["VPVR"] = vpvr_signal
-                    enhanced_signals["VPVRSignal"] = vpvr_signal
-
-                    # Merge VPVR levels with Support/Resistance
-                    vpvr_levels = vpvr_profile.calculate_vpvr(df)
-                    if vpvr_levels:
-                        merged_sr = vpvr_profile.merge_with_support_resistance(vpvr_levels, sr_calculator)
-                        enhanced_signals["MergedSupportResistance"] = merged_sr
-
-                    # Heikin-Ashi Analysis
-                    ha_signal = heikin_ashi.get_heikin_ashi_signal(df)
-                    signals["HeikinAshi"] = ha_signal
-                    enhanced_signals["HeikinAshiSignal"] = ha_signal
-
-                    # Check confluence across timeframes
-                    confluence_detected = heikin_ashi.check_confluence(df, multi_tf)
-                    enhanced_signals["HAConfluence"] = confluence_detected
-
-                    # GARCH Volatility Forecasting
-                    shorten_periods = garch_forecaster.should_shorten_periods(df)
-                    enhanced_signals["GARCHShortenPeriods"] = shorten_periods
-
-                    # Integrate with AdaptiveParameterCalculator
-                    if shorten_periods:
-                        # Shorten RSI period for high volatility
-                        adaptive_calc._rsi_period = min(adaptive_calc.adaptive_rsi_period(df), 9)
-                        logger.info(f"Shortened RSI period due to high volatility for {symbol}")
-
-                except Exception as e:
-                    logger.warning(f"Error in Phase 1 advanced analysis for {symbol}: {e}")
-                    # Set neutral signals on failure
-                    signals["VPVR"] = "neutral"
-            # Phase 2 Advanced Technical Analysis Features
-            if ENABLE_ADVANCED_TECH:
-                try:
-                    # Harmonic Pattern Detection
-                    harmonic_signal = harmonic_detector.get_harmonic_signal(df)
-                    signals["Harmonic"] = harmonic_signal
-                    enhanced_signals["HarmonicSignal"] = harmonic_signal
-
-                    # HMM Regime Detection
-                    features = hmm_detector.prepare_features(df)
-                    logger.info(f"HMM features for {symbol}: returns - min: {features['returns'].min() if 'returns' in features else 'N/A'}, max: {features['returns'].max() if 'returns' in features else 'N/A'}, nans: {features['returns'].isna().sum() if 'returns' in features else 'N/A'}; "
-                                f"volatility - min: {features['volatility'].min() if 'volatility' in features else 'N/A'}, max: {features['volatility'].max() if 'volatility' in features else 'N/A'}, nans: {features['volatility'].isna().sum() if 'volatility' in features else 'N/A'}; "
-                                f"volume_log - min: {features['volume_log'].min() if 'volume_log' in features else 'N/A'}, max: {features['volume_log'].max() if 'volume_log' in features else 'N/A'}, nans: {features['volume_log'].isna().sum() if 'volume_log' in features else 'N/A'}")
-                    hmm_regime, hmm_conf = hmm_detector.fit_hmm_model(features, df)
-                    if hmm_conf < 1.0:
-                        hmm_signal = 'fallback'
-                        logger.info("Using fallback regime")
-                        ensemble_gen.base_weights['HMM'] = 0.05  # Reduced weight for fallback
-                    else:
-                        hmm_signal = hmm_regime.replace('_regime', '')  # e.g., 'bull'
-                    signals["HMM"] = hmm_signal
-                    enhanced_signals["HMMSignal"] = hmm_signal
-                    enhanced_signals["HMMConfidence"] = hmm_conf
-
-                    # Dynamic weight adjustment based on regime
-                    if hmm_signal != "neutral" and hmm_signal != 'fallback':
-                        ensemble_gen.base_weights = hmm_detector.adjust_weights_for_regime(
-                            ensemble_gen.base_weights, hmm_regime
-                        )
-
-                except Exception as e:
-                    logger.warning(f"Error in Phase 2 advanced analysis for {symbol}: {e}")
-                    # Set neutral signals on failure
-                    signals["Harmonic"] = "neutral"
-                    signals["HMM"] = "neutral"
-                    enhanced_signals["HarmonicSignal"] = "neutral"
-                    enhanced_signals["HMMSignal"] = "neutral"
-                    signals["HeikinAshi"] = "neutral"
-                    enhanced_signals["VPVRSignal"] = "neutral"
-                    enhanced_signals["HeikinAshiSignal"] = "neutral"
-                    enhanced_signals["GARCHShortenPeriods"] = False
-
-            # Phase 3 Advanced Technical Analysis Features
-            if ENABLE_ADVANCED_TECH:
-                try:
-                    # LSTM Deep Learning Prediction
-                    if len(df) >= LSTM_WINDOW + 50:  # Sufficient data for LSTM
-                        lstm_trained = lstm_predictor.train_model(df, signals, symbol)
-                        if lstm_trained:
-                            lstm_signal, lstm_confidence = lstm_predictor.predict_signal(df, signals)
-                            signals["LSTM"] = lstm_signal
-                            enhanced_signals["LSTMSignal"] = lstm_signal
-                            enhanced_signals["LSTMConfidence"] = lstm_confidence
-                            logger.info(f"LSTM prediction for {symbol}: {lstm_signal} (confidence: {lstm_confidence:.2f})")
-                        else:
-                            signals["LSTM"] = "neutral"
-                            enhanced_signals["LSTMSignal"] = "neutral"
-                    else:
-                        signals["LSTM"] = "neutral"
-                        enhanced_signals["LSTMSignal"] = "neutral"
-
-                    # Enhanced VaR Calculation and Risk Assessment
-                    risk_metrics = var_calculator.get_comprehensive_risk_metrics(df)
-                    enhanced_signals["VaRMetrics"] = risk_metrics
-                    risk_adjustment = risk_metrics.get('risk_adjustment_factor', 0.0)
-                    enhanced_signals["RiskAdjustment"] = risk_adjustment
-
-                    # Export VaR metrics to state for portfolio adjustment
-                    state = var_calculator.export_to_state(risk_metrics, state)
-
-                    logger.info(f"VaR analysis for {symbol}: {risk_metrics.get('risk_level', 'unknown')} risk, adjustment: {risk_adjustment:.2f}")
-
-                except Exception as e:
-                    logger.warning(f"Error in Phase 3 advanced analysis for {symbol}: {e}")
-                    # Set neutral signals on failure
-                    signals["LSTM"] = "neutral"
-                    enhanced_signals["LSTMSignal"] = "neutral"
-                    enhanced_signals["VaRMetrics"] = {}
-                    enhanced_signals["RiskAdjustment"] = 0.0
-
-            # Parameter optimization (run periodically or on demand)
-            if len(df) >= 100:
-                optimized_params = optimizer.optimize_all_parameters(df)
-                enhanced_signals["OptimizedParameters"] = optimized_params
-
-            # Probability scoring
-            prob_score = prob_scorer.score_probability(signals)
-            enhanced_signals["ProbabilityScore"] = prob_score
-
-            # Risk adjustment
-            if (ensemble_signal in ["buy", "sell"] and
-                trend_score >= TREND_STRENGTH_THRESHOLD and
-                prob_score >= PROBABILITY_THRESHOLD):
-                entry_price = df['Close'].iloc[-1]
-                stop_loss = risk_adjuster.calculate_stop_loss(df, entry_price, ensemble_signal)
-                enhanced_signals["StopLoss"] = stop_loss
-                enhanced_signals["RiskAdjustedSignal"] = ensemble_signal
-
-            # Advanced backtesting validation
-            if len(df) >= 100:
-                # Walk-forward analysis
-                wf_results = backtest_validator.walk_forward_analysis(df, signals)
-                enhanced_signals["WalkForwardAnalysis"] = wf_results
-
-                # Monte Carlo simulation
-                mc_results = backtest_validator.monte_carlo_simulation(df, signals)
-                enhanced_signals["MonteCarloSimulation"] = mc_results
-
-                # Traditional backtest validation
-                if ensemble_signal in ["buy", "sell"]:
-                    validation_score = backtest_validator.validate_signal(df, ensemble_signal)
-                    if validation_score >= BACKTEST_VALIDATION_THRESHOLD:
-                        enhanced_signals["BacktestValidationScore"] = validation_score
-                        enhanced_signals["ValidatedSignal"] = ensemble_signal
-
-            technical_signals[symbol] = enhanced_signals
-            logger.info(f"Calculated enhanced technical signals for {symbol}")
-
-        except Exception as e:
-            logger.error(f"Error in enhanced technical analysis for {symbol}: {e}")
-            technical_signals[symbol] = {"error": "Enhanced technical analysis failed"}
-
-    return {"technical_signals": technical_signals}
+def technical_analysis_agent(state: State) -> State:
+    """
+    AnalysisActor: Perform technical analysis.
+    """
+    logger.info("AnalysisActor started")
+    pipeline = TechnicalAnalysisPipeline()
+    result_state = pipeline.run(state)
+    symbols = list(state.get("stock_data", {}).keys())
+    logger.info(f"AnalysisActor completed for {len(symbols)} symbols: {symbols}")
+    return result_state
 
 
 def _calculate_technical_indicators_with_retry(
@@ -3163,298 +2808,215 @@ def _calculate_technical_indicators_with_retry(
 
 
 def _calculate_technical_indicators_talib(df: pd.DataFrame, rsi_period: int = 14, symbol: str = "") -> Dict[str, str]:
+    """
+    Calculates technical indicators using the TA-Lib library.
+    Applies India-specific parameters for .NS symbols.
+    """
+    from config.config import INDIA_SPECIFIC_PARAMS, RSI_OVERBOUGHT, RSI_OVERSOLD
     
     signals = {}
+    if not TALIB_AVAILABLE or df.empty or len(df) < 20:  # Minimum data requirement for most indicators
+        return signals
 
-    try:
-        logger.info(f"TA-Lib input columns: {df.columns.tolist()}")
-        if 'close' in df.columns:
-            df = df.rename(columns={
-                'close': 'Close',
-                'high': 'High',
-                'low': 'Low',
-                'volume': 'Volume'
-            })
-            logger.info(f"Renamed columns for TA-Lib: {df.columns.tolist()}")
-        # Convert to numpy arrays
-        close = df['Close'].values.astype(float)
-        high = df['High'].values.astype(float)
-        low = df['Low'].values.astype(float)
-        volume = df['Volume'].values.astype(float)
+    close = df['Close'].values.astype(float)
+    high = df['High'].values.astype(float)
+    low = df['Low'].values.astype(float)
+    
+    # Detect Indian stock for params
+    is_indian = symbol.endswith('.NS')
+    rsi_oversold = INDIA_SPECIFIC_PARAMS['RSI_OVERSOLD'] if is_indian else RSI_OVERSOLD
+    rsi_overbought = INDIA_SPECIFIC_PARAMS['RSI_OVERBOUGHT'] if is_indian else RSI_OVERBOUGHT
+    macd_fast = INDIA_SPECIFIC_PARAMS['MACD_FAST'] if is_indian else 12
+    macd_slow = INDIA_SPECIFIC_PARAMS['MACD_SLOW'] if is_indian else 26
+    macd_signal_period = INDIA_SPECIFIC_PARAMS['MACD_SIGNAL'] if is_indian else 9
 
-        # Calculate trend indicators first for use in neutral conditions
-        sma20 = talib.SMA(close, timeperiod=20)
-        sma50 = talib.SMA(close, timeperiod=50)
-        ema20 = talib.EMA(close, timeperiod=20)
-        ema50 = talib.EMA(close, timeperiod=50)
-        if len(close) < 50 or pd.isna(sma20[-1]) or pd.isna(sma50[-1]) or pd.isna(ema20[-1]) or pd.isna(ema50[-1]):
-            trend_signal = "neutral"
-        else:
-            buy_conditions = [
-                close[-1] > sma20[-1],
-                sma20[-1] > sma50[-1],
-                close[-1] > ema20[-1],
-                ema20[-1] > ema50[-1]
-            ]
-            sell_conditions = [
-                close[-1] < sma20[-1],
-                sma20[-1] < sma50[-1],
-                close[-1] < ema20[-1],
-                ema20[-1] < ema50[-1]
-            ]
-            buy_count = sum(buy_conditions)
-            sell_count = sum(sell_conditions)
-            if buy_count >= 2:
-                trend_signal = "buy"
-            elif sell_count >= 2:
-                trend_signal = "sell"
-            else:
-                trend_signal = "neutral"
-
-        # RSI
+    # RSI
+    if len(close) < rsi_period:
+        signals['RSI'] = "neutral"
+    else:
         rsi = talib.RSI(close, timeperiod=rsi_period)
-        if pd.isna(rsi[-1]):
-            rsi_signal = "neutral"
+        if len(rsi) > 0 and not np.isnan(rsi[-1]):
+            signals['RSI'] = "buy" if rsi[-1] < rsi_oversold else "sell" if rsi[-1] > rsi_overbought else "neutral"
         else:
-            rsi_signal = "buy" if rsi[-1] <= RSI_OVERSOLD else "sell" if rsi[-1] >= RSI_OVERBOUGHT else trend_signal
-        signals["RSI"] = rsi_signal
+            signals['RSI'] = "neutral"
 
-        # MACD
-        macd, macdsignal, _ = talib.MACD(close)
-        if pd.isna(macd[-1]) or pd.isna(macdsignal[-1]):
-            macd_signal = "neutral"
+    # MACD
+    # Minimum data requirement for MACD (slow for slow EMA + signal for signal line)
+    if len(close) < macd_slow + macd_signal_period:
+        signals['MACD'] = "neutral"
+    else:
+        macd, macdsignal, _ = talib.MACD(close, fastperiod=macd_fast, slowperiod=macd_slow, signalperiod=macd_signal_period)
+        if len(macd) > 0 and len(macdsignal) > 0 and not np.isnan(macd[-1]) and not np.isnan(macdsignal[-1]):
+            signals['MACD'] = "buy" if macd[-1] > macdsignal[-1] else "sell" if macd[-1] < macdsignal[-1] else "neutral"
         else:
-            macd_signal = "buy" if macd[-1] > macdsignal[-1] else "sell"
-        signals["MACD"] = macd_signal
+            signals['MACD'] = "neutral"
 
-        # SMA
-        if pd.isna(sma20[-1]) or pd.isna(sma50[-1]):
-            sma_signal = "neutral"
-        else:
-            sma_signal = "buy" if close[-1] > sma20[-1] and sma20[-1] > sma50[-1] else "sell"
-        signals["SMA"] = sma_signal
-
-        # EMA
-        if pd.isna(ema20[-1]) or pd.isna(ema50[-1]):
-            ema_signal = "neutral"
-        else:
-            ema_signal = "buy" if close[-1] > ema20[-1] and ema20[-1] > ema50[-1] else "sell"
-        signals["EMA"] = ema_signal
-
-        # Bollinger Bands
+    # Bollinger Bands
+    if len(close) < 20:  # Minimum data requirement for Bollinger Bands
+        signals['Bollinger'] = "neutral"
+    else:
         upper, _, lower = talib.BBANDS(close)
-        if pd.isna(upper[-1]) or pd.isna(lower[-1]):
-            bb_signal = "neutral"
+        if len(upper) > 0 and len(lower) > 0 and not np.isnan(upper[-1]) and not np.isnan(lower[-1]) and not np.isnan(close[-1]):
+            signals['Bollinger'] = "buy" if close[-1] < lower[-1] else "sell" if close[-1] > upper[-1] else "neutral"
         else:
-            # Signal when price is within 0.5% of bands
-            lower_distance = abs(close[-1] - lower[-1]) / close[-1]
-            upper_distance = abs(close[-1] - upper[-1]) / close[-1]
-            bb_signal = "buy" if lower_distance <= 0.005 else "sell" if upper_distance <= 0.005 else trend_signal
-        signals["Bollinger"] = bb_signal
+            signals['Bollinger'] = "neutral"
 
-        # OBV
-        obv = talib.OBV(close, volume)
-        if pd.isna(obv[-1]) or pd.isna(obv[-2]):
-            obv_signal = "neutral"
-        else:
-            obv_signal = "buy" if obv[-1] > obv[-2] else "sell"
-        signals["OBV"] = obv_signal
-
-        # Stochastic Oscillator
+    # Stochastic Oscillator
+    # Minimum data requirement for Stochastic (14 for %K + 3 for %D)
+    if len(high) < 14 + 3 or len(low) < 14 + 3 or len(close) < 14 + 3:
+        signals['Stochastic'] = "neutral"
+    else:
         slowk, slowd = talib.STOCH(high, low, close)
-        if pd.isna(slowk[-1]) or pd.isna(slowd[-1]):
-            stoch_signal = "neutral"
+        if len(slowk) > 0 and len(slowd) > 0 and not np.isnan(slowk[-1]) and not np.isnan(slowd[-1]):
+            signals['Stochastic'] = "buy" if slowk[-1] < 20 and slowd[-1] < 20 else "sell" if slowk[-1] > 80 and slowd[-1] > 80 else "neutral"
         else:
-            stoch_signal = "buy" if slowk[-1] < 25 or slowd[-1] < 25 else "sell" if slowk[-1] > 75 or slowd[-1] > 75 else trend_signal
-        signals["Stochastic"] = stoch_signal
-
-        # Williams %R
-        willr = talib.WILLR(high, low, close)
-        if pd.isna(willr[-1]):
-            willr_signal = "neutral"
-        else:
-            willr_signal = "buy" if willr[-1] < -80 else "sell" if willr[-1] > -20 else trend_signal
-        signals["WilliamsR"] = willr_signal
-
-        # Commodity Channel Index (CCI)
-        cci = talib.CCI(high, low, close)
-        if pd.isna(cci[-1]):
-            cci_signal = "neutral"
-        else:
-            cci_signal = "buy" if cci[-1] < -100 else "sell" if cci[-1] > 100 else trend_signal
-        signals["CCI"] = cci_signal
-
-        # Average Directional Index (ADX) for trend strength
-        adx = talib.ADX(high, low, close)
-        if pd.isna(adx[-1]):
-            trend_strength = "weak"
-        else:
-            trend_strength = "strong" if adx[-1] > 25 else "weak"
-        signals["TrendStrength"] = trend_strength
-
-        # Relative Strength Index with different periods
-        rsi_9 = talib.RSI(close, timeperiod=9)
-        rsi_21 = talib.RSI(close, timeperiod=21)
-        rsi_adaptive = talib.RSI(close, timeperiod=rsi_period)
-        if pd.isna(rsi_9[-1]) or pd.isna(rsi_21[-1]) or pd.isna(rsi_adaptive[-1]):
-            rsi_multi_signal = "neutral"
-        else:
-            rsi_multi_signal = "buy" if rsi_9[-1] <= 30 and rsi_21[-1] <= 30 and rsi_adaptive[-1] <= RSI_OVERSOLD else "sell" if rsi_9[-1] >= 70 and rsi_21[-1] >= 70 and rsi_adaptive[-1] >= RSI_OVERBOUGHT else trend_signal
-        signals["RSI_Multi"] = rsi_multi_signal
-
-    except Exception as e:
-        logger.warning(f"Error calculating TA-Lib indicators: {e}")
-        signals = {"error": "TA-Lib calculation failed"}
+            signals['Stochastic'] = "neutral"
 
     return signals
 
 
 def _calculate_technical_indicators_basic(df: pd.DataFrame, rsi_period: int = 14, symbol: str = "") -> Dict[str, str]:
-    
+    """
+    A basic, fallback implementation of technical indicators without TA-Lib.
+    Applies India-specific parameters for NSE stocks.
+    """
     signals = {}
+    if df.empty or len(df) < 20:  # Minimum data requirement for most indicators
+        signals = {'RSI': 'neutral', 'MACD': 'neutral', 'Bollinger': 'neutral', 'Stochastic': 'neutral'}
+        return signals
 
-    try:
-        logger.info(f"Basic TA input columns: {df.columns.tolist()}")
-        if 'close' in df.columns:
-            df = df.rename(columns={'close': 'Close', 'volume': 'Volume'})
-            logger.info(f"Renamed columns for basic TA: {df.columns.tolist()}")
-        close_prices = df['Close'].pct_change()
-        volume = df['Volume']
+    # FIXED: Use settings instead of direct config access
+    is_indian_stock = symbol.endswith('.NS')
+    rsi_oversold = settings.india_specific_params['RSI_OVERSOLD'] if is_indian_stock else settings.rsi_oversold
+    rsi_overbought = settings.india_specific_params['RSI_OVERBOUGHT'] if is_indian_stock else settings.rsi_overbought
+    macd_fast = settings.india_specific_params['MACD_FAST'] if is_indian_stock else 12
+    macd_slow = settings.india_specific_params['MACD_SLOW'] if is_indian_stock else 26
+    macd_signal = settings.india_specific_params['MACD_SIGNAL'] if is_indian_stock else 9
 
-        # Calculate trend indicators first
-        sma20 = df['Close'].rolling(20).mean()
-        sma50 = df['Close'].rolling(50).mean()
-        ema20 = df['Close'].ewm(span=20).mean()
-        ema50 = df['Close'].ewm(span=50).mean()
-        if len(df) < 50 or pd.isna(sma20.iloc[-1]) or pd.isna(sma50.iloc[-1]) or pd.isna(ema20.iloc[-1]) or pd.isna(ema50.iloc[-1]):
-            trend_signal = "neutral"
+    # RSI - Fixed implementation using Wilder's smoothing
+    if len(df) < rsi_period + 1:
+        signals['RSI'] = "neutral"
+    else:
+        delta = df['Close'].diff(1)
+        gain = delta.where(delta > 0, 0.0)
+        loss = -delta.where(delta < 0, 0.0)
+
+        # Initial simple moving averages
+        avg_gain = gain.rolling(window=rsi_period, min_periods=rsi_period).mean()
+        avg_loss = loss.rolling(window=rsi_period, min_periods=rsi_period).mean()
+
+        # FIXED: Apply Wilder's smoothing for subsequent values
+        for i in range(rsi_period, len(df)):
+            if pd.notna(gain.iloc[i]):
+                avg_gain.iloc[i] = (avg_gain.iloc[i-1] * (rsi_period - 1) + gain.iloc[i]) / rsi_period
+            if pd.notna(loss.iloc[i]):
+                avg_loss.iloc[i] = (avg_loss.iloc[i-1] * (rsi_period - 1) + loss.iloc[i]) / rsi_period
+
+        rs = avg_gain / avg_loss.replace(0, 1e-9)
+        rsi = 100.0 - (100.0 / (1.0 + rs))
+        
+        # Handle constant price case (zero volatility)
+        if avg_gain.iloc[-1] == 0 and avg_loss.iloc[-1] == 0:
+            signals['RSI'] = "neutral"
         else:
-            buy_conditions = [
-                df['Close'].iloc[-1] > sma20.iloc[-1],
-                sma20.iloc[-1] > sma50.iloc[-1],
-                df['Close'].iloc[-1] > ema20.iloc[-1],
-                ema20.iloc[-1] > ema50.iloc[-1]
-            ]
-            sell_conditions = [
-                df['Close'].iloc[-1] < sma20.iloc[-1],
-                sma20.iloc[-1] < sma50.iloc[-1],
-                df['Close'].iloc[-1] < ema20.iloc[-1],
-                ema20.iloc[-1] < ema50.iloc[-1]
-            ]
-            buy_count = sum(buy_conditions)
-            sell_count = sum(sell_conditions)
-            if buy_count >= 2:
-                trend_signal = "buy"
-            elif sell_count >= 2:
-                trend_signal = "sell"
-            else:
-                trend_signal = "neutral"
+            signals['RSI'] = "buy" if pd.notna(rsi.iloc[-1]) and rsi.iloc[-1] < rsi_oversold else "sell" if pd.notna(rsi.iloc[-1]) and rsi.iloc[-1] > rsi_overbought else "neutral"
 
-        # Simple RSI approximation
-        if len(close_prices) > 14:
-            price_changes = df['Close'].diff()
-            gains = price_changes.where(price_changes > 0, 0)
-            losses = -price_changes.where(price_changes < 0, 0)
+    # MACD - Using TA-Lib exact EMA initialization
+    def calculate_ema_talib(series: pd.Series, period: int) -> pd.Series:
+        """Calculate EMA using TA-Lib initialization method."""
+        n = len(series)
+        if n == 0:
+            return pd.Series(np.full(n, np.nan), index=series.index)
+        
+        alpha = 2.0 / (period + 1.0)
+        ema = np.full(n, np.nan)
+        
+        # Find first non-NaN index
+        first_valid_idx = series.first_valid_index()
+        if first_valid_idx is None or pd.isna(first_valid_idx):
+            return pd.Series(ema, index=series.index)
+        
+        first_valid_pos = series.index.get_loc(first_valid_idx)
+        if n - first_valid_pos < period:
+            # Not enough data after first valid
+            for i in range(first_valid_pos, n):
+                if not pd.isna(series.iloc[i]):
+                    ema[i] = series.iloc[i]  # Just copy if insufficient
+            return pd.Series(ema, index=series.index)
+        
+        # Find the position for initialization: first_valid_pos + period - 1
+        init_pos = first_valid_pos + period - 1
+        if init_pos >= n:
+            init_pos = n - 1
+        
+        # FIXED: SMA over the first 'period' valid values starting from first_valid
+        valid_start = first_valid_pos
+        valid_data = series.iloc[valid_start:init_pos + 1].dropna()
+        if len(valid_data) >= period:
+            sma_init = valid_data.iloc[0:period].mean()
+        else:
+            # If less than period valid, use all available
+            sma_init = valid_data.mean()
+        
+        ema[init_pos] = sma_init
+        
+        # Forward fill the recursive calculation
+        for i in range(init_pos + 1, n):
+            if pd.isna(series.iloc[i]):
+                continue  # Skip NaNs in input
+            ema[i] = alpha * series.iloc[i] + (1.0 - alpha) * ema[i - 1]
+        
+        # Backward fill if needed, but usually not for EMA
+        # For positions between first_valid and init_pos, we can approximate by simple average or leave NaN
+        # But to match TA-Lib, leave as NaN until init_pos
+        
+        return pd.Series(ema, index=series.index)
 
-            avg_gain = gains.rolling(14).mean()
-            avg_loss = losses.rolling(14).mean()
-            rs = avg_gain / avg_loss.replace(0, 1e-9)
-            rsi = 100 - (100 / (1 + rs))
-            rsi_value = rsi.iloc[-1]
+    if len(df) < macd_slow + macd_signal:  # Minimum data requirement for MACD
+        signals['MACD'] = "neutral"
+    else:
+        close = df['Close']
+        ema_fast = calculate_ema_talib(close, macd_fast)
+        ema_slow = calculate_ema_talib(close, macd_slow)
+        macd_line = ema_fast - ema_slow
+        signal_line = calculate_ema_talib(macd_line, macd_signal)
+        
+        # Ensure no NaN in final values
+        if pd.isna(macd_line.iloc[-1]) or pd.isna(signal_line.iloc[-1]):
+            signals['MACD'] = "neutral"
+        else:
+            signals['MACD'] = "buy" if macd_line.iloc[-1] > signal_line.iloc[-1] else "sell" if macd_line.iloc[-1] < signal_line.iloc[-1] else "neutral"
 
-            rsi_signal = "buy" if rsi_value <= RSI_OVERSOLD else "sell" if rsi_value >= RSI_OVERBOUGHT else trend_signal
-            signals["RSI"] = rsi_signal
+    # Bollinger Bands
+    if len(df) < 20:  # Minimum data requirement for Bollinger Bands
+        signals['Bollinger'] = "neutral"
+    else:
+        sma20 = df['Close'].rolling(window=20).mean()
+        std20 = df['Close'].rolling(window=20).std()
+        upper_band = sma20 + (std20 * 2)
+        lower_band = sma20 - (std20 * 2)
+        signals['Bollinger'] = "buy" if df['Close'].iloc[-1] < lower_band.iloc[-1] else "sell" if df['Close'].iloc[-1] > upper_band.iloc[-1] else "neutral"
 
-        # Simple moving averages
-        if len(sma20) > 0 and len(sma50) > 0:
-            if pd.isna(sma20.iloc[-1]) or pd.isna(sma50.iloc[-1]):
-                sma_signal = "neutral"
-            else:
-                sma_signal = "buy" if df['Close'].iloc[-1] > sma20.iloc[-1] and sma20.iloc[-1] > sma50.iloc[-1] else "sell"
-            signals["SMA"] = sma_signal
-
-        # Exponential moving averages
-        if len(ema20) > 0 and len(ema50) > 0:
-            if pd.isna(ema20.iloc[-1]) or pd.isna(ema50.iloc[-1]):
-                ema_signal = "neutral"
-            else:
-                ema_signal = "buy" if df['Close'].iloc[-1] > ema20.iloc[-1] and ema20.iloc[-1] > ema50.iloc[-1] else "sell"
-            signals["EMA"] = ema_signal
-
-        # Basic MACD approximation
-        if len(ema20) > 0 and len(ema50) > 0:
-            macd_line = ema20 - ema50
-            signal_line = macd_line.ewm(span=9).mean()
-            if pd.isna(macd_line.iloc[-1]) or pd.isna(signal_line.iloc[-1]):
-                macd_signal = "neutral"
-            else:
-                macd_signal = "buy" if macd_line.iloc[-1] > signal_line.iloc[-1] else "sell"
-            signals["MACD"] = macd_signal
-
-        # Basic Bollinger Bands approximation
-        if len(df['Close']) > 20:
-            sma_bb = df['Close'].rolling(20).mean()
-            std_bb = df['Close'].rolling(20).std()
-            upper_bb = sma_bb + (std_bb * 2)
-            lower_bb = sma_bb - (std_bb * 2)
-            if pd.isna(upper_bb.iloc[-1]) or pd.isna(lower_bb.iloc[-1]):
-                bb_signal = "neutral"
-            else:
-                # Signal when price is within 0.5% of bands
-                close_price = df['Close'].iloc[-1]
-                lower_distance = abs(close_price - lower_bb.iloc[-1]) / close_price
-                upper_distance = abs(close_price - upper_bb.iloc[-1]) / close_price
-                bb_signal = "buy" if lower_distance <= 0.005 else "sell" if upper_distance <= 0.005 else trend_signal
-            signals["Bollinger"] = bb_signal
-
-        # Basic volume-based signal
-        if len(volume) >= 3:
-            recent_vol = volume.iloc[-1]
-            prev_vol = volume.iloc[-2]
-            obv_signal = "buy" if recent_vol > prev_vol else "sell"
-            signals["OBV"] = obv_signal
-
-        # Basic Stochastic approximation
-        if len(df) > 14:
-            high_14 = df['High'].rolling(14).max()
-            low_14 = df['Low'].rolling(14).min()
-            k_percent = 100 * ((df['Close'] - low_14) / (high_14 - low_14))
-            d_percent = k_percent.rolling(3).mean()
-            if pd.isna(k_percent.iloc[-1]) or pd.isna(d_percent.iloc[-1]):
-                stoch_signal = "neutral"
-            else:
-                stoch_signal = "buy" if k_percent.iloc[-1] < 25 or d_percent.iloc[-1] < 25 else "sell" if k_percent.iloc[-1] > 75 or d_percent.iloc[-1] > 75 else trend_signal
-            signals["Stochastic"] = stoch_signal
-
-        # Basic Williams %R approximation
-        if len(df) > 14:
-            high_14 = df['High'].rolling(14).max()
-            low_14 = df['Low'].rolling(14).min()
-            williams_r = -100 * ((high_14 - df['Close']) / (high_14 - low_14))
-            if pd.isna(williams_r.iloc[-1]):
-                willr_signal = "neutral"
-            else:
-                willr_signal = "buy" if williams_r.iloc[-1] < -80 else "sell" if williams_r.iloc[-1] > -20 else trend_signal
-            signals["WilliamsR"] = willr_signal
-
-        # Basic CCI approximation
-        if len(df) > 20:
-            typical_price = (df['High'] + df['Low'] + df['Close']) / 3
-            sma_tp = typical_price.rolling(20).mean()
-            mad = (typical_price - sma_tp).abs().rolling(20).mean()
-            cci = (typical_price - sma_tp) / (0.015 * mad)
-            if pd.isna(cci.iloc[-1]):
-                cci_signal = "neutral"
-            else:
-                cci_signal = "buy" if cci.iloc[-1] < -100 else "sell" if cci.iloc[-1] > 100 else trend_signal
-            signals["CCI"] = cci_signal
-
-        signals["TrendStrength"] = "strong" if trend_signal != "neutral" else "weak"
-        signals["RSI_Multi"] = signals.get("RSI", "neutral")
-
-    except Exception as e:
-        logger.warning(f"Error calculating basic indicators: {e}")
-        signals = {"error": "Basic calculation failed"}
+    # Stochastic - Fixed implementation to match TA-Lib STOCH (slowk, slowd)
+    if len(df) < 14 + 3 + 3:  # Minimum for fastk (14), slowk (3), slowd (3)
+        signals['Stochastic'] = "neutral"
+    else:
+        low14 = df['Low'].rolling(window=14).min()
+        high14 = df['High'].rolling(window=14).max()
+        
+        # Fast %K
+        fastk = 100.0 * (df['Close'] - low14) / (high14 - low14).replace(0, 1e-9)
+        
+        # Slow %K (3-period SMA of fast %K)
+        slowk = fastk.rolling(window=3).mean()
+        
+        # Slow %D (3-period SMA of slow %K)
+        slowd = slowk.rolling(window=3).mean()
+        
+        # Generate signal using slowk and slowd to match TA-Lib
+        signals['Stochastic'] = "buy" if pd.notna(slowk.iloc[-1]) and pd.notna(slowd.iloc[-1]) and slowk.iloc[-1] < 20 and slowd.iloc[-1] < 20 else "sell" if pd.notna(slowk.iloc[-1]) and pd.notna(slowd.iloc[-1]) and slowk.iloc[-1] > 80 and slowd.iloc[-1] > 80 else "neutral"
+    
+    return signals
 
 
     

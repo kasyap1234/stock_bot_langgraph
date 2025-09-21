@@ -130,4 +130,3 @@ class State(ExtTypedDict):
     # Real-time data
     real_time_data: Dict[str, List[Dict[str, Any]]]
     real_time_active: bool
-    failed_stocks: List[Dict[str, str]]

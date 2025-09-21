@@ -37,7 +37,7 @@ class TestFeatureEngineer:
             data['Low'][i] = min(data['Open'][i], data['Low'][i], data['Close'][i])
 
         df = pd.DataFrame(data, index=dates)
-        return df</search>
+        return df
 
     @pytest.fixture
     def feature_engineer(self):

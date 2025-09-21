@@ -9,6 +9,9 @@ import logging
 from typing import Optional, Dict, Any, Tuple
 
 from langgraph.graph import StateGraph, START, END
+from data.quality_validator import validate_data
+import numpy as np
+import datetime
 
 import argparse
 
@@ -22,8 +25,10 @@ from agents import (
     risk_assessment_agent,
     macro_analysis_agent
 )
-from recommendation import final_recommendation_agent, backtest_interpretation_agent
+from recommendation import final_recommendation_agent
+from config.config import WALK_FORWARD_ENABLED
 from simulation import run_trading_simulation
+from simulation.advanced_backtesting_engine import WalkForwardOptimizer
 from analysis import PerformanceAnalyzer
 from utils import setup_logging, graceful_shutdown
 
@@ -56,8 +61,41 @@ def create_initial_state() -> State:
         "final_recommendation": {},
         "simulation_results": {},
         "performance_analysis": {},
-        "failed_stocks": []
+        "failed_stocks": [],
+        "data_valid": False,
+        "validation_errors": []
     }
+
+
+def validation_node(state: State) -> Dict[str, Any]:
+    """Validate fetched data and determine if analysis should proceed."""
+    stock_data = state.get("stock_data", {})
+    failed_stocks = state.get("failed_stocks", [])
+    symbols = list(stock_data.keys()) + [f["symbol"] for f in failed_stocks]
+    
+    validation_errors = []
+    data_valid = len(stock_data) > 0 and len(failed_stocks) < len(symbols)
+    
+    if not data_valid:
+        if len(stock_data) == 0:
+            validation_errors.append("No stock data fetched successfully")
+        if len(failed_stocks) == len(symbols):
+            validation_errors.append("All stocks failed to fetch data")
+    
+    logger.info(f"Data validation: valid={data_valid}, successful={len(stock_data)}/{len(symbols)}, errors={len(validation_errors)}")
+    
+    return {
+        "data_valid": data_valid,
+        "validation_errors": validation_errors
+    }
+
+
+def should_proceed_to_analyses(state: State) -> str:
+    """Conditional router: proceed to analyses if data is valid, else end."""
+    if state.get("data_valid", False):
+        return "analyses_hub"
+    logger.warning(f"Skipping analyses due to invalid data: {state.get('validation_errors', [])}")
+    return END
 
 def print_analysis_header() -> None:
     
@@ -155,21 +193,21 @@ def print_simulation_results(simulation_results: Dict[str, Any],
     print("\n💰 Portfolio Simulation Results:")
     print("=" * 50)
 
-    # Portfolio metrics
-    final_value = simulation_results.get('final_portfolio_value', 0)
-    total_return = simulation_results.get('total_return', 0)
-    max_drawdown = simulation_results.get('max_drawdown', 0)
+    # Portfolio metrics with None checks
+    final_value = float(simulation_results.get('final_portfolio_value', 0) or 0)
+    total_return = float(simulation_results.get('total_return', 0) or 0)
+    max_drawdown = float(simulation_results.get('max_drawdown', 0) or 0)
 
     print(f"Final Portfolio Value: ₹{final_value:,.0f}")
     print(f"Total Return: {total_return:.2%}")
     print(f"Maximum Drawdown: {max_drawdown:.2%}")
 
     # Performance rating
-    rating = performance_analysis.get('performance_rating', 'Unknown')
+    rating = performance_analysis.get('performance_rating', 'Unknown') or 'Unknown'
     print(f"\n🏆 Performance Rating: {rating}")
 
     # Key insights
-    insights = performance_analysis.get("insights", [])
+    insights = performance_analysis.get("insights", []) or []
     if insights:
         print("\n💡 Key Insights:")
         for insight in insights[:3]:  # Show top 3 insights
@@ -177,16 +215,63 @@ def print_simulation_results(simulation_results: Dict[str, Any],
 
 
 def simulation_node(state: State) -> Dict[str, Any]:
-    
+    """SimulationActor: Run trading simulation."""
+    logger.info("SimulationActor started")
     try:
         rsi_threshold = state.get('rsi_threshold')
-        simulation_results = run_trading_simulation(state, rsi_buy_threshold=rsi_threshold)
-        mode = "basic RSI" if rsi_threshold else "enhanced"
-        logger.info(f"{mode.capitalize()} simulation completed")
+        if rsi_threshold is not None:
+            simulation_results = run_trading_simulation(state, rsi_buy_threshold=rsi_threshold)
+            mode = "basic RSI"
+        else:
+            simulation_results = run_trading_simulation(state)
+            mode = "enhanced"
+        logger.info(f"SimulationActor completed ({mode} mode)")
         return {"simulation_results": simulation_results}
     except Exception as e:
-        logger.error(f"Simulation failed: {e}")
+        logger.error(f"SimulationActor failed: {e}")
         return {"simulation_results": {"error": str(e)}}
+
+
+def analyses_hub(state: State) -> State:
+    """No-op hub to fan out to parallel analyses."""
+    logger.info("Analyses hub: routing to parallel actors")
+    return state
+
+
+def log_technical_analysis(state: State) -> Dict[str, Any]:
+    start_time = datetime.datetime.now()
+    logger.info(f"Technical analysis started at {start_time}")
+    result = technical_analysis_agent(state)
+    end_time = datetime.datetime.now()
+    logger.info(f"Technical analysis completed at {end_time} (duration: {end_time - start_time})")
+    return result
+
+
+def log_fundamental_analysis(state: State) -> Dict[str, Any]:
+    start_time = datetime.datetime.now()
+    logger.info(f"Fundamental analysis started at {start_time}")
+    result = fundamental_analysis_agent(state)
+    end_time = datetime.datetime.now()
+    logger.info(f"Fundamental analysis completed at {end_time} (duration: {end_time - start_time})")
+    return result
+
+
+def log_sentiment_analysis(state: State) -> Dict[str, Any]:
+    start_time = datetime.datetime.now()
+    logger.info(f"Sentiment analysis started at {start_time}")
+    result = sentiment_analysis_agent(state)
+    end_time = datetime.datetime.now()
+    logger.info(f"Sentiment analysis completed at {end_time} (duration: {end_time - start_time})")
+    return result
+
+
+def log_macro_analysis(state: State) -> Dict[str, Any]:
+    start_time = datetime.datetime.now()
+    logger.info(f"Macro analysis started at {start_time}")
+    result = macro_analysis_agent(state)
+    end_time = datetime.datetime.now()
+    logger.info(f"Macro analysis completed at {end_time} (duration: {end_time - start_time})")
+    return result
 
 
 def performance_node(state: State) -> Dict[str, Any]:
@@ -205,6 +290,86 @@ def performance_node(state: State) -> Dict[str, Any]:
         return {"performance_analysis": {"error": "No simulation results"}}
 
 
+def should_run_walk_forward_and_simulate(state: State) -> str:
+    """Conditional: run walk-forward then simulation if backtest enabled."""
+    if state.get('backtest', False):
+        return "walk_forward"
+    return END
+
+
+def walk_forward_node(state: State) -> Dict[str, Any]:
+    """Run walk-forward optimization on stock data before backtest."""
+    try:
+        if 'stock_data' not in state or not state['stock_data']:
+            logger.warning("No stock data for walk-forward optimization")
+            return {"walk_forward_results": {}}
+        
+        if WALK_FORWARD_ENABLED:
+            optimizer = WalkForwardOptimizer()
+            results = optimizer.run_optimization(
+                state['stock_data'],
+                list(state['stock_data'].keys())
+            )
+            logger.info("Walk-forward optimization completed")
+        else:
+            # Fallback to basic validation if disabled
+            from simulation.backtesting_engine import BacktestingEngine
+            engine = BacktestingEngine(initial_capital=100000)
+            results = engine.walk_forward_validation(state['stock_data'])
+            logger.info("Basic walk-forward validation completed")
+        
+        return {"walk_forward_results": results}
+    except Exception as e:
+        logger.error(f"Walk-forward optimization failed: {e}")
+        return {"walk_forward_results": {"error": str(e)}}
+
+
+def print_walk_forward_results(final_state: State) -> None:
+    """Print walk-forward optimization results, focusing on RELIANCE.NS and TATAMOTORS.NS."""
+    results = final_state.get("walk_forward_results", {})
+    if not results or "error" in results:
+        if isinstance(results, dict) and "error" in results:
+            print(f"\n🔄 Walk-Forward Optimization failed: {results['error']}")
+        return
+    
+    print("\n🔄 Walk-Forward Optimization Results:")
+    print("=" * 80)
+    
+    target_symbols = ["RELIANCE.NS", "TATAMOTORS.NS"]
+    for symbol in target_symbols:
+        if symbol in results:
+            wf_res = results[symbol]
+            oos = wf_res.get('aggregated_oos', {})
+            if 'avg_sharpe' in oos:
+                print(f"\n{symbol} ({wf_res['num_periods']} periods):")
+                print(f"  OOS Avg Sharpe: {oos['avg_sharpe']:.2f} (Std: {oos.get('std_sharpe', 0):.2f})")
+                print(f"  OOS Avg Win Rate: {oos['avg_win_rate']:.1%}")
+                print(f"  OOS Avg Max Drawdown: {oos['avg_drawdown']:.1%}")
+                print(f"  OOS Avg Return: {oos['avg_returns']:.1%}")
+                print(f"  Total OOS Trades: {oos['total_oos_trades']}")
+                print(f"  OOS Win Rate Target (>50%): {'✅' if oos['oos_win_rate_target_met'] else '❌'}")
+                
+                # Log sample period details
+                periods = wf_res.get('periods', [])
+                if periods:
+                    print("  Sample Periods:")
+                    for p in periods[:2]:  # First 2 periods
+                        print(f"    Period {p['period_id']}: IS {p['is_dates']} | OOS {p['oos_dates']} | "
+                              f"IS Sharpe={p['is_metrics']['sharpe']:.2f} | OOS Sharpe={p['oos_metrics']['sharpe']:.2f}")
+            else:
+                print(f"{symbol}: No OOS metrics available")
+        else:
+            print(f"{symbol}: No results available")
+    
+    # Overall summary
+    all_symbols = [s for s in results if s in target_symbols and 'aggregated_oos' in results[s]]
+    if all_symbols:
+        avg_oos_sharpe = np.mean([results[s]['aggregated_oos']['avg_sharpe'] for s in all_symbols])
+        avg_oos_win = np.mean([results[s]['aggregated_oos']['avg_win_rate'] for s in all_symbols])
+        print(f"\nOverall OOS (across {len(all_symbols)} symbols):")
+        print(f"  Avg Sharpe: {avg_oos_sharpe:.2f}, Avg Win Rate: {avg_oos_win:.1%}")
+
+
 def should_simulate(state: State):
     
     logger.info(f"should_simulate: backtest={state.get('backtest', False)}, recommendations={state.get('final_recommendation', {})}")
@@ -217,7 +382,7 @@ def should_simulate(state: State):
     return END
 
 
-def build_workflow_graph(stocks_to_analyze: Optional[list] = None) -> StateGraph:
+def build_workflow_graph(stocks_to_analyze: Optional[list] = None, period: str = "5y") -> StateGraph:
     
     try:
         # Create graph with state schema
@@ -226,34 +391,44 @@ def build_workflow_graph(stocks_to_analyze: Optional[list] = None) -> StateGraph
         # Add analysis nodes with configurable stock symbols
         default_stocks = stocks_to_analyze or DEFAULT_STOCKS
         graph.add_node("data_fetcher",
-                      lambda state: data_fetcher_agent(state, default_stocks))
-        graph.add_node("technical_analysis", technical_analysis_agent)
-        graph.add_node("fundamental_analysis", fundamental_analysis_agent)
-        graph.add_node("sentiment_analysis", sentiment_analysis_agent)
-        graph.add_node("macro_analysis", macro_analysis_agent)
+                      lambda state: data_fetcher_agent(state, default_stocks, period=period))
+        graph.add_node("validation", validation_node)
+        graph.add_node("analyses_hub", analyses_hub)
+        graph.add_node("technical_analysis", log_technical_analysis)
+        graph.add_node("fundamental_analysis", log_fundamental_analysis)
+        graph.add_node("sentiment_analysis", log_sentiment_analysis)
+        graph.add_node("macro_analysis", log_macro_analysis)
         graph.add_node("risk_assessment", risk_assessment_agent)
         graph.add_node("final_recommendation", final_recommendation_agent)
         graph.add_node("simulation", simulation_node)
         graph.add_node("performance", performance_node)
+        graph.add_node("walk_forward", walk_forward_node)
 
-        # Define workflow: START -> data_fetcher -> parallel analyses -> risk_assessment -> final_recommendation
+        # Define workflow: START -> data_fetcher -> validation -> conditional to analyses_hub -> parallel analyses -> risk_assessment -> final_recommendation
         graph.add_edge(START, "data_fetcher")
-        graph.add_edge("data_fetcher", "technical_analysis")
-        graph.add_edge("data_fetcher", "fundamental_analysis")
-        graph.add_edge("data_fetcher", "sentiment_analysis")
-        graph.add_edge("data_fetcher", "macro_analysis")
+        graph.add_edge("data_fetcher", "validation")
+        graph.add_conditional_edges(
+            "validation",
+            should_proceed_to_analyses,
+            {"analyses_hub": "analyses_hub", END: END}
+        )
+        graph.add_edge("analyses_hub", "technical_analysis")
+        graph.add_edge("analyses_hub", "fundamental_analysis")
+        graph.add_edge("analyses_hub", "sentiment_analysis")
+        graph.add_edge("analyses_hub", "macro_analysis")
         graph.add_edge("technical_analysis", "risk_assessment")
         graph.add_edge("fundamental_analysis", "risk_assessment")
         graph.add_edge("sentiment_analysis", "risk_assessment")
         graph.add_edge("macro_analysis", "risk_assessment")
         graph.add_edge("risk_assessment", "final_recommendation")
         
-        # Conditional edge after final_recommendation
+        # Conditional: walk-forward then simulation if backtest enabled
         graph.add_conditional_edges(
             "final_recommendation",
-            should_simulate,
-            {"simulation": "simulation", END: END}
+            should_run_walk_forward_and_simulate,
+            {"walk_forward": "walk_forward", END: END}
         )
+        graph.add_edge("walk_forward", "simulation")
         
         # Simulation flow
         graph.add_edge("simulation", "performance")
@@ -269,13 +444,18 @@ def build_workflow_graph(stocks_to_analyze: Optional[list] = None) -> StateGraph
         raise ValueError("Workflow graph compilation failed") from e
 
 
-def run_analysis_and_simulation(stocks_to_analyze: Optional[list] = None, backtest: bool = False, basic: bool = False) -> Tuple[Optional[State], Optional[Dict], Optional[Dict]]:
+def run_analysis_and_simulation(stocks_to_analyze: Optional[list] = None, backtest: bool = False, basic: bool = False, period: str = "5y", walk_forward_enabled: bool = True) -> Tuple[Optional[State], Optional[Dict], Optional[Dict]]:
     
     try:
         logger.info("Starting trading analysis workflow")
-
+    
+        if not walk_forward_enabled:
+            global WALK_FORWARD_ENABLED
+            WALK_FORWARD_ENABLED = False
+            logger.info("Walk-forward disabled via flag")
+    
         # Build workflow
-        graph = build_workflow_graph(stocks_to_analyze)
+        graph = build_workflow_graph(stocks_to_analyze, period)
 
         # Initialize state
         initial_state = create_initial_state()
@@ -308,9 +488,8 @@ def run_analysis_and_simulation(stocks_to_analyze: Optional[list] = None, backte
             perf_state = performance_node(final_state)
             final_state.update(perf_state)
 
-        if not final_state:
-            logger.error("Analysis workflow returned empty state")
-            return None, None, None
+        # Display walk-forward results if performed
+        print_walk_forward_results(final_state)
 
         # Display recommendations
         print_recommendations(final_state)
@@ -338,6 +517,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Stock Trading Bot")
     parser.add_argument("--ticker", nargs="+", help="Stock symbols to analyze (single or multiple, e.g., RELIANCE.NS or RELIANCE.NS TCS.NS)")
     parser.add_argument("--tickers", help="Comma-separated stock symbols to analyze (e.g., RELIANCE.NS,TCS.NS,INFY.NS)")
+    parser.add_argument("--period", default="5y", help="Period for data fetch")
+    parser.add_argument("--walk_forward_enabled", action="store_true", default=True, help="Enable walk-forward optimization")
     parser.add_argument("--nifty50", action="store_true", help="Analyze NIFTY 50 stocks")
     parser.add_argument("--backtest", action="store_true", help="Run backtest simulation")
     parser.add_argument("--basic", action="store_true", help="Use basic RSI strategy for backtest (baseline)")
@@ -358,7 +539,7 @@ if __name__ == "__main__":
 
         # Execute main analysis
         analysis_state, simulation_results, performance_analysis = run_analysis_and_simulation(
-            stocks_to_analyze, args.backtest, args.basic
+            stocks_to_analyze, args.backtest, args.basic, args.period, args.walk_forward_enabled
         )
         logger.info("Trading analysis completed successfully")
 
