@@ -150,6 +150,9 @@ class Settings(BaseSettings):
     ]
     log_format: str = '%(asctime)s - %(levelname)s - %(message)s'
     yahoo_finance_api_key: str = ""  # Usually not required
+    groq_tool_choice: str = Field(default="auto", env="GROQ_TOOL_CHOICE")
+    max_tool_calls: int = Field(default=5, env="MAX_TOOL_CALLS")
+    disclaimer_text: str = Field(default="This is AI-generated analysis for informational purposes only. Not financial advice. Consult a professional. Data as of latest fetch.", env="DISCLAIMER_TEXT")
 
     class Config:
         env_file = ".env"
@@ -244,3 +247,6 @@ TRAILING_STOP_PCT = settings.trailing_stop_pct
 TIME_EXIT_DAYS = settings.time_exit_days
 PROFIT_TARGET_LEVELS = settings.profit_target_levels
 MODEL_DIR = settings.model_dir
+GROQ_TOOL_CHOICE = settings.groq_tool_choice
+MAX_TOOL_CALLS = settings.max_tool_calls
+DISCLAIMER_TEXT = settings.disclaimer_text

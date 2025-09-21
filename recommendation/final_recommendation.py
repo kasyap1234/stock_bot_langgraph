@@ -124,7 +124,7 @@ class EnhancedRecommendationEngine:
 
         # Backtest Results
         backtest_results = state.get("backtest_results", {})
-        backtest_factor = self._analyze_backtest_factor(backtest_results)
+        backtest_factor = self._analyze_backtest_factor(backtest_results, symbol, df)
         factors.append(backtest_factor)
         if DEBUG_RECOMMENDATION_LOGGING:
             logger.debug(f"[{symbol}] Backtest factor: strength={backtest_factor.strength:.3f}, confidence={backtest_factor.confidence:.3f}, weight={backtest_factor.weight:.3f}")
@@ -336,6 +336,13 @@ class EnhancedRecommendationEngine:
             if DEBUG_RECOMMENDATION_LOGGING:
                 logger.debug(f"Strong signal boost applied: +0.1 (factors: {[f.factor_type.value for f in strong_signals]})")
 
+        # Backtest profitability boost
+        backtest_factor = next((f for f in factors if f.factor_type == FactorType.BACKTEST), None)
+        if backtest_factor and backtest_factor.strength > 0.6:
+            composite_score += 0.3
+            if DEBUG_RECOMMENDATION_LOGGING:
+                logger.debug(f"Backtest profitability boost: +0.3 (strength: {backtest_factor.strength:.3f})")
+
         # Momentum boost: +0.05 if technical and sentiment are both positive
         technical_factor = next((f for f in factors if f.factor_type == FactorType.TECHNICAL), None)
         sentiment_factor = next((f for f in factors if f.factor_type == FactorType.SENTIMENT), None)
@@ -351,7 +358,10 @@ class EnhancedRecommendationEngine:
             logger.debug(f"All boosts applied: original={original_score:.3f}, final={composite_score:.3f}, positive_factors={positive_factors}")
 
         # Determine action with optimized thresholds to reduce HOLD bias
-        if composite_score > 0.08 or (composite_score > 0.04 and positive_factors >= 3):
+        backtest_factor = next((f for f in factors if f.factor_type == FactorType.BACKTEST), None)
+        if backtest_factor and backtest_factor.strength > 0.6 and composite_score > -0.05:
+            action = "BUY"
+        elif composite_score > 0.08 or (composite_score > 0.04 and positive_factors >= 3):
             action = "BUY"
         elif composite_score < -0.08:
             action = "SELL"
@@ -518,6 +528,8 @@ class EnhancedRecommendationEngine:
         
         if len(df) < 20:
             return {'volatility': 0.02, 'trend_strength': 0.5}  # Defaults
+        
+        df = df.rename(columns={'close': 'Close', 'high': 'High', 'low': 'Low', 'volume': 'Volume'})
         
         # ATR for volatility
         high = df['High']
@@ -1022,36 +1034,64 @@ class EnhancedRecommendationEngine:
             reasoning=reasoning
         )
 
-    def _analyze_backtest_factor(self, backtest_results: Dict[str, Any]) -> FactorAnalysis:
+    def _analyze_backtest_factor(self, backtest_results: Dict[str, Any], symbol: str, df: pd.DataFrame) -> FactorAnalysis:
         
         if not backtest_results or "error" in backtest_results:
-            return FactorAnalysis(
-                factor_type=FactorType.BACKTEST,
-                strength=0.0,
-                confidence=0.0,
-                weight=self.base_weights[FactorType.BACKTEST],
-                data=backtest_results,
-                reasoning="Backtest results unavailable"
-            )
-
-        sharpe = backtest_results.get('sharpe_ratio', backtest_results.get('averaged_sharpe_ratio', 0))
-        win_rate = backtest_results.get('win_rate', backtest_results.get('averaged_win_rate', 0))
-        max_drawdown = backtest_results.get('max_drawdown', backtest_results.get('averaged_max_drawdown', 0))
-
-        # Calculate strength based on backtest performance
-        if sharpe > 1.5 and win_rate > 0.6 and max_drawdown < 0.15:
-            strength = 0.9
-        elif sharpe > 1.0 and win_rate > 0.55:
-            strength = 0.6
-        elif sharpe < 0.5 or win_rate < 0.45 or max_drawdown > 0.25:
-            strength = -0.9
-        elif sharpe < 0.8 or win_rate < 0.5:
-            strength = -0.6
+            df = df.rename(columns={'close': 'Close'})
+            if df.empty or len(df) < 100:
+                strength = 0.0
+                reasoning = "Insufficient historical data for backtest"
+                backtest_results = {}
+            else:
+                returns = df['Close'].pct_change().dropna()
+                if len(returns) < 50:
+                    strength = 0.0
+                    reasoning = "Insufficient returns data"
+                    backtest_results = {}
+                else:
+                    total_return = (df['Close'].iloc[-1] / df['Close'].iloc[0] - 1)
+                    num_years = len(returns) / 252
+                    annual_return = (1 + total_return) ** (1 / num_years) - 1 if num_years > 0 else total_return
+                    vol = returns.std() * np.sqrt(252)
+                    sharpe = annual_return / vol if vol > 0 else 0
+                    win_rate = (returns > 0).mean()
+                    cum_max = df['Close'].expanding().max()
+                    drawdown = (cum_max - df['Close']) / cum_max
+                    max_drawdown = drawdown.max()
+                    if sharpe > 1.0 and win_rate > 0.6 and max_drawdown < 0.2:
+                        strength = 0.9
+                    elif sharpe > 0.5 and win_rate > 0.55:
+                        strength = 0.8
+                    elif total_return > 0:
+                        strength = 0.8
+                    elif sharpe < 0.5 or win_rate < 0.45 or max_drawdown > 0.3:
+                        strength = -0.8
+                    else:
+                        strength = -0.4
+                    reasoning = f"Historical B&H Backtest: Sharpe {sharpe:.2f}, Win Rate {win_rate:.1%}, Total Return {total_return:.1%}, Max DD {max_drawdown:.1%}"
+                    backtest_results = {'sharpe_ratio': sharpe, 'win_rate': win_rate, 'max_drawdown': max_drawdown, 'total_return': total_return}
         else:
-            strength = 0.0
+            sharpe = backtest_results.get('sharpe_ratio', backtest_results.get('averaged_sharpe_ratio', 0))
+            win_rate = backtest_results.get('win_rate', backtest_results.get('averaged_win_rate', 0))
+            max_drawdown = backtest_results.get('max_drawdown', backtest_results.get('averaged_max_drawdown', 0))
+
+            # Calculate strength based on backtest performance
+            if sharpe > 1.5 and win_rate > 0.6 and max_drawdown < 0.15:
+                strength = 0.9
+            elif sharpe > 1.0 and win_rate > 0.55:
+                strength = 0.8
+            elif total_return > 0:
+                strength = 0.8
+            elif sharpe < 0.5 or win_rate < 0.45 or max_drawdown > 0.25:
+                strength = -0.9
+            elif sharpe < 0.8 or win_rate < 0.5:
+                strength = -0.6
+            else:
+                strength = 0.0
+
+            reasoning = f"Backtest: Sharpe {sharpe:.2f}, WinRate {win_rate:.1%}, MaxDD {max_drawdown:.1%}"
 
         confidence = 0.7  # Backtest provides historical validation
-        reasoning = f"Backtest: Sharpe {sharpe:.2f}, WinRate {win_rate:.1%}, MaxDD {max_drawdown:.1%}"
 
         return FactorAnalysis(
             factor_type=FactorType.BACKTEST,
@@ -1359,8 +1399,32 @@ def _generate_recommendation(
         # Step 4: Synthesize decision
         decision = _engine.synthesize_decision(factors, dynamic_weights)
 
+        # Post-processing for profitability bias
+        backtest_factor = next((f for f in factors if f.factor_type == FactorType.BACKTEST), None)
+        profitability_note = ""
+        if backtest_factor:
+            backtest_data = backtest_factor.data
+            total_return = backtest_data.get('total_return', 0) if isinstance(backtest_data, dict) else 0
+            sharpe = backtest_data.get('sharpe_ratio', backtest_factor.strength) if isinstance(backtest_data, dict) else backtest_factor.strength
+            win_rate = backtest_data.get('win_rate', 0) if isinstance(backtest_data, dict) else 0
+            if sharpe > 0.5 or win_rate > 0.5 or total_return > -0.05:
+                if decision['action'] != 'BUY':
+                    decision['action'] = 'BUY'
+                profitability_note = f" Based on backtest Sharpe {sharpe:.1f} and win rate {win_rate:.0%}, recommend BUY for expected profit."
+            else:
+                if decision['action'] == 'BUY':
+                    decision['action'] = 'HOLD'
+                profitability_note = f" Caution: Backtest shows negative returns (Sharpe {sharpe:.1f}, win rate {win_rate:.0%}), adjusting to HOLD/SELL."
+        else:
+            profitability_note = ""
+
         # Step 5: Generate enhanced LLM reasoning if available
         llm_reasoning = _get_enhanced_llm_reasoning(symbol, decision, factors, market_conditions, dynamic_weights) if _llm else None
+
+        if llm_reasoning:
+            llm_reasoning += profitability_note
+        else:
+            decision['decision_reasoning'] += profitability_note
 
         # Prepare final output with backward compatibility
         return {
@@ -1657,16 +1721,20 @@ def _get_enhanced_llm_reasoning(
 
         prompt_template = PromptTemplate(
             input_variables=["symbol", "action", "confidence", "composite_score", "factors", "market_conditions"],
-            template="""For {symbol}:
-Action: {action} (Confidence: {confidence:.1f}%)
-Composite Score: {composite_score:.2f}
+            template="""You are a profitable trading AI assistant. Your goal is to generate recommendations that maximize profitability while managing risk.
 
-Factor Analysis:
+For {symbol}:
+Current Rule-based Action: {action} (Confidence: {confidence:.1f}%, Composite Score: {composite_score:.2f})
+
+Factor Analysis (pay special attention to Backtest factor for historical profitability):
 {factors}
 
+Market Conditions:
 {market_conditions}
 
-Provide a comprehensive analysis explaining the recommendation, key supporting factors, and potential risks."""
+Provide comprehensive reasoning prioritizing profitability and risk-adjusted returns. Analyze the backtest performance: if Sharpe >1.0 or win rate >60% or historical return >0%, strongly reinforce BUY and highlight profitable potential. If backtest shows losses (Sharpe <0.5 or win rate <50%), suggest adjusting to HOLD or SELL to avoid drawdowns. Weigh all factors but bias towards historically profitable strategies.
+
+End your response with exactly: "Final Recommendation: BUY" or "Final Recommendation: SELL" or "Final Recommendation: HOLD"."""
         )
 
         chain = prompt_template | _llm
@@ -1684,6 +1752,17 @@ Provide a comprehensive analysis explaining the recommendation, key supporting f
     except Exception as e:
         logger.warning(f"Enhanced LLM reasoning failed: {e}")
         return None
+
+
+def _parse_suggested_action(reasoning: str) -> Optional[str]:
+    reasoning_lower = reasoning.lower()
+    if "final recommendation: buy" in reasoning_lower:
+        return "BUY"
+    elif "final recommendation: sell" in reasoning_lower:
+        return "SELL"
+    elif "final recommendation: hold" in reasoning_lower:
+        return "HOLD"
+    return None
 
 
 def _get_backtest_interpretation(backtest: Dict[str, Any]) -> str:

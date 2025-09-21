@@ -197,11 +197,18 @@ def run_trading_simulation(
                 else:
                     logger.warning(f"SimulationActor: {symbol} Walk-Forward failed: {wf_res.get('error', 'Unknown error')}")
 
+        # Determine aggressive sizing for positive BUY scenarios
+        aggressive_sizing = False
+        for rec in final_recommendations.values():
+            if isinstance(rec, dict) and rec.get('action') == 'BUY' and rec.get('composite_score', 0) > 0:
+                aggressive_sizing = True
+                break
+
         # Initialize backtesting engine
         engine = BacktestingEngine(
             initial_capital=initial_capital,
             commission_rate=commission_rate,
-            max_position_size=0.1  # 10% max position
+            max_position_size=0.2 if aggressive_sizing else 0.1  # Aggressive 20% for positive BUY scenarios
         )
 
         # Determine simulation period

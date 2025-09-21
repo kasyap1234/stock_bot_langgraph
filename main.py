@@ -1,12 +1,11 @@
-
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-
 import logging
 from typing import Optional, Dict, Any, Tuple
+import json
 
 from langgraph.graph import StateGraph, START, END
 from data.quality_validator import validate_data
@@ -15,7 +14,7 @@ import datetime
 
 import argparse
 
-from config.config import GROQ_API_KEY, MODEL_NAME, DEFAULT_STOCKS, NIFTY_50_STOCKS, TOP_N_RECOMMENDATIONS
+from config.config import GROQ_API_KEY, MODEL_NAME, DEFAULT_STOCKS, NIFTY_50_STOCKS, TOP_N_RECOMMENDATIONS, GROQ_TOOL_CHOICE, MAX_TOOL_CALLS, DISCLAIMER_TEXT
 from data.models import State
 from agents import (
     data_fetcher_agent,
@@ -31,23 +30,39 @@ from simulation import run_trading_simulation
 from simulation.advanced_backtesting_engine import WalkForwardOptimizer
 from analysis import PerformanceAnalyzer
 from utils import setup_logging, graceful_shutdown
-
+from tools import (
+    fetch_stock_price,
+    compute_technical_indicators,
+    get_sentiment,
+    validate_indian_stock,
+    get_tool_schemas,
+    web_search,
+    stock_search
+)
 
 setup_logging()
 logger = logging.getLogger(__name__)
 
 llm: Optional[Any] = None
+groq_client = None
+tool_functions = {
+    "fetch_stock_price": fetch_stock_price,
+    "compute_technical_indicators": compute_technical_indicators,
+    "get_sentiment": get_sentiment,
+    "validate_indian_stock": validate_indian_stock,
+    "web_search": web_search,
+    "stock_search": stock_search,
+}
 if GROQ_API_KEY and GROQ_API_KEY != "demo":
     try:
-        from langchain_groq import ChatGroq
-        llm = ChatGroq(model=MODEL_NAME, api_key=GROQ_API_KEY)
-        logger.info("LLM initialized successfully")
+        from groq import Groq
+        groq_client = Groq(api_key=GROQ_API_KEY)
+        logger.info("Groq client initialized successfully")
     except Exception as e:
-        logger.warning(f"LLM initialization failed: {e}")
+        logger.warning(f"Groq client initialization failed: {e}")
         logger.info("Proceeding with rule-based analysis only")
 else:
-    logger.info("LLM not configured, using rule-based recommendations")
-
+    logger.info("Groq not configured, using rule-based recommendations")
 
 def create_initial_state() -> State:
     
@@ -66,7 +81,6 @@ def create_initial_state() -> State:
         "validation_errors": [],
         "backtest": False
     }
-
 
 def validation_node(state: State) -> Dict[str, Any]:
     """Validate fetched data and determine if analysis should proceed."""
@@ -89,7 +103,6 @@ def validation_node(state: State) -> Dict[str, Any]:
         "data_valid": data_valid,
         "validation_errors": validation_errors
     }
-
 
 def should_proceed_to_analyses(state: State) -> str:
     """Conditional router: proceed to analyses if data is valid or backtest enabled, else end."""
@@ -214,7 +227,6 @@ def print_simulation_results(simulation_results: Dict[str, Any],
         for insight in insights[:3]:  # Show top 3 insights
             print(f"• {insight}")
 
-
 def simulation_node(state: State) -> Dict[str, Any]:
     """SimulationActor: Run trading simulation."""
     logger.info("SimulationActor started")
@@ -232,12 +244,10 @@ def simulation_node(state: State) -> Dict[str, Any]:
         logger.error(f"SimulationActor failed: {e}")
         return {"simulation_results": {"error": str(e)}}
 
-
 def analyses_hub(state: State) -> State:
     """No-op hub to fan out to parallel analyses."""
     logger.info("Analyses hub: routing to parallel actors")
     return state
-
 
 def log_technical_analysis(state: State) -> Dict[str, Any]:
     start_time = datetime.datetime.now()
@@ -251,7 +261,6 @@ def log_technical_analysis(state: State) -> Dict[str, Any]:
     logger.info(f"Technical analysis completed at {end_time} (duration: {end_time - start_time})")
     return result
 
-
 def log_fundamental_analysis(state: State) -> Dict[str, Any]:
     start_time = datetime.datetime.now()
     logger.info(f"Fundamental analysis started at {start_time}")
@@ -263,7 +272,6 @@ def log_fundamental_analysis(state: State) -> Dict[str, Any]:
     end_time = datetime.datetime.now()
     logger.info(f"Fundamental analysis completed at {end_time} (duration: {end_time - start_time})")
     return result
-
 
 def log_sentiment_analysis(state: State) -> Dict[str, Any]:
     start_time = datetime.datetime.now()
@@ -277,7 +285,6 @@ def log_sentiment_analysis(state: State) -> Dict[str, Any]:
     logger.info(f"Sentiment analysis completed at {end_time} (duration: {end_time - start_time})")
     return result
 
-
 def log_macro_analysis(state: State) -> Dict[str, Any]:
     start_time = datetime.datetime.now()
     logger.info(f"Macro analysis started at {start_time}")
@@ -289,7 +296,6 @@ def log_macro_analysis(state: State) -> Dict[str, Any]:
     end_time = datetime.datetime.now()
     logger.info(f"Macro analysis completed at {end_time} (duration: {end_time - start_time})")
     return result
-
 
 def performance_node(state: State) -> Dict[str, Any]:
     
@@ -306,13 +312,11 @@ def performance_node(state: State) -> Dict[str, Any]:
     else:
         return {"performance_analysis": {"error": "No simulation results"}}
 
-
 def should_run_walk_forward_and_simulate(state: State) -> str:
     """Conditional: run walk-forward then simulation if backtest enabled."""
     if state.get('backtest', False):
         return "walk_forward"
     return END
-
 
 def walk_forward_node(state: State) -> Dict[str, Any]:
     """Run walk-forward optimization on stock data before backtest."""
@@ -339,7 +343,6 @@ def walk_forward_node(state: State) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Walk-forward optimization failed: {e}")
         return {"walk_forward_results": {"error": str(e)}}
-
 
 def print_walk_forward_results(final_state: State) -> None:
     """Print walk-forward optimization results, focusing on RELIANCE.NS and TATAMOTORS.NS."""
@@ -395,7 +398,6 @@ def print_walk_forward_results(final_state: State) -> None:
         print(f"\nOverall OOS (across {len(all_symbols)} symbols):")
         print(f"  Avg Sharpe: {avg_oos_sharpe:.2f}, Avg Win Rate: {avg_oos_win:.1%}")
 
-
 def should_simulate(state: State):
     
     logger.info(f"should_simulate: backtest={state.get('backtest', False)}, recommendations={state.get('final_recommendation', {})}")
@@ -406,7 +408,6 @@ def should_simulate(state: State):
         if isinstance(rec, dict) and rec.get("action") in ["BUY", "SELL"]:
             return "simulation"
     return END
-
 
 def build_workflow_graph(stocks_to_analyze: Optional[list] = None, period: str = "5y") -> StateGraph:
     
@@ -481,7 +482,6 @@ def build_workflow_graph(stocks_to_analyze: Optional[list] = None, period: str =
         logger.error(f"Failed to build workflow graph: {e}")
         raise ValueError("Workflow graph compilation failed") from e
 
-
 def run_analysis_and_simulation(stocks_to_analyze: Optional[list] = None, backtest: bool = False, basic: bool = False, period: str = "5y", walk_forward_enabled: bool = True) -> Tuple[Optional[State], Optional[Dict], Optional[Dict]]:
     
     try:
@@ -547,13 +547,12 @@ def run_analysis_and_simulation(stocks_to_analyze: Optional[list] = None, backte
         logger.error(f"Analysis workflow failed: {e}")
         raise RuntimeError("Trading analysis failed") from e
 
-
 if __name__ == "__main__":
     
     # Setup graceful shutdown for clean termination
     graceful_shutdown()
 
-    parser = argparse.ArgumentParser(description="Stock Trading Bot")
+    parser = argparse.ArgumentParser(description="StockBot: Indian Stock Analysis")
     parser.add_argument("--ticker", nargs="+", help="Stock symbols to analyze (single or multiple, e.g., RELIANCE.NS or RELIANCE.NS TCS.NS)")
     parser.add_argument("--tickers", help="Comma-separated stock symbols to analyze (e.g., RELIANCE.NS,TCS.NS,INFY.NS)")
     parser.add_argument("--period", default="5y", help="Period for data fetch")
@@ -561,26 +560,92 @@ if __name__ == "__main__":
     parser.add_argument("--nifty50", action="store_true", help="Analyze NIFTY 50 stocks")
     parser.add_argument("--backtest", action="store_true", help="Run backtest simulation")
     parser.add_argument("--basic", action="store_true", help="Use basic RSI strategy for backtest (baseline)")
+    parser.add_argument("--interactive", action="store_true", help="Interactive Groq tool mode (default if no other flags)")
+    parser.epilog = "Run without flags for interactive mode, or use --ticker for batch."
     args = parser.parse_args()
 
+    if not args.interactive and not (args.ticker or args.tickers or args.nifty50 or args.backtest or args.basic):
+        args.interactive = True
+
     try:
-        # Determine stocks to analyze
-        if args.tickers:
-            # Parse comma-separated tickers
-            stocks_to_analyze = [ticker.strip() for ticker in args.tickers.split(',') if ticker.strip()]
-            logger.info(f"Using comma-separated tickers: {stocks_to_analyze}")
+        if args.interactive:
+            print("StockBot Interactive Mode. Type 'exit' to quit.")
+            if not groq_client:
+                print("Groq client not configured for interactive mode.")
+            else:
+                while True:
+                    query = input("You: ")
+                    if query.lower() == 'exit':
+                        break
+                    try:
+                        messages = [{"role": "user", "content": query}]
+                        tool_call_count = 0
+                        while True:
+                            response = groq_client.chat.completions.create(
+                                model=MODEL_NAME,
+                                messages=messages,
+                                tools=get_tool_schemas(),
+                                tool_choice="auto",
+                                max_tokens=1024
+                            )
+                            message = response.choices[0].message
+                            if message.tool_calls:
+                                tool_calls = message.tool_calls
+                                for tool_call in tool_calls:
+                                    func_name = tool_call.function.name
+                                    try:
+                                        args_dict = json.loads(tool_call.function.arguments)
+                                        result = tool_functions[func_name](**args_dict)
+                                        messages.append({
+                                            "role": "tool",
+                                            "tool_call_id": tool_call.id,
+                                            "name": func_name,
+                                            "content": json.dumps(result)
+                                        })
+                                    except json.JSONDecodeError as e:
+                                        logger.error(f"Invalid tool arguments JSON: {e}")
+                                        messages.append({
+                                            "role": "tool",
+                                            "tool_call_id": tool_call.id,
+                                            "name": func_name,
+                                            "content": json.dumps({"error": "Invalid arguments"})
+                                        })
+                                    except Exception as e:
+                                        logger.error(f"Tool execution error: {e}")
+                                        messages.append({
+                                            "role": "tool",
+                                            "tool_call_id": tool_call.id,
+                                            "name": func_name,
+                                            "content": json.dumps({"error": str(e)})
+                                        })
+                                tool_call_count += 1
+                                if tool_call_count >= MAX_TOOL_CALLS:
+                                    break
+                            else:
+                                final_response = message.content
+                                print("StockBot:", final_response)
+                                print(DISCLAIMER_TEXT)
+                                break
+                    except Exception as e:
+                        print(f"Error: {e}")
         else:
-            stocks_to_analyze = args.ticker
+            # Determine stocks to analyze
+            if args.tickers:
+                # Parse comma-separated tickers
+                stocks_to_analyze = [ticker.strip() for ticker in args.tickers.split(',') if ticker.strip()]
+                logger.info(f"Using comma-separated tickers: {stocks_to_analyze}")
+            else:
+                stocks_to_analyze = args.ticker
 
-        if args.nifty50 and not stocks_to_analyze:
-            stocks_to_analyze = NIFTY_50_STOCKS
-            logger.info(f"Using NIFTY 50 stocks ({len(NIFTY_50_STOCKS)} symbols)")
+            if args.nifty50 and not stocks_to_analyze:
+                stocks_to_analyze = NIFTY_50_STOCKS
+                logger.info(f"Using NIFTY 50 stocks ({len(NIFTY_50_STOCKS)} symbols)")
 
-        # Execute main analysis
-        analysis_state, simulation_results, performance_analysis = run_analysis_and_simulation(
-            stocks_to_analyze, args.backtest, args.basic, args.period, args.walk_forward_enabled
-        )
-        logger.info("Trading analysis completed successfully")
+            # Execute main analysis
+            analysis_state, simulation_results, performance_analysis = run_analysis_and_simulation(
+                stocks_to_analyze, args.backtest, args.basic, args.period, args.walk_forward_enabled
+            )
+            logger.info("Trading analysis completed successfully")
 
     except KeyboardInterrupt:
         logger.info("Execution interrupted by user")
