@@ -87,13 +87,11 @@ class BaseStrategy(ABC):
         data: pd.DataFrame,
         state: Optional[State] = None
     ) -> List[TradingSignal]:
-        
-        pass
+        raise NotImplementedError("Strategies must implement generate_signals")
 
     @abstractmethod
     def validate_signal(self, signal: TradingSignal, data: pd.DataFrame) -> bool:
-        
-        pass
+        raise NotImplementedError("Strategies must implement validate_signal")
 
     def calculate_position_size(
         self,
@@ -617,8 +615,7 @@ class EnsembleStrategy(BaseStrategy):
         super().__init__(config)
         self.strategies = config.parameters.get('strategies', [])
         self.weights = config.parameters.get('weights', {})
-        # Reduced threshold for more active trading
-        self.confidence_threshold = config.parameters.get('confidence_threshold', 0.45)  # Reduced from 0.5
+        self.confidence_threshold = config.parameters.get('confidence_threshold', ENSEMBLE_THRESHOLD)
 
     def generate_signals(
         self,

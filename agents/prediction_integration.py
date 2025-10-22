@@ -6,7 +6,7 @@ import numpy as np
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 
-from config.config import ENSEMBLE_THRESHOLD, PROBABILITY_THRESHOLD
+from config.trading_config import ENSEMBLE_THRESHOLD, PROBABILITY_THRESHOLD
 from data.models import State
 
 logger = logging.getLogger(__name__)

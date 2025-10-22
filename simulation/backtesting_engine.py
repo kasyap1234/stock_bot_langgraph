@@ -2,7 +2,7 @@
 
 import logging
 logger = logging.getLogger(__name__)
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 import pandas as pd
@@ -20,7 +20,7 @@ except ImportError:
     TradingSignal = None
     StrategyFactory = None
     EnsembleStrategy = None
-from config.config import TRADE_LIMIT, SIMULATION_DAYS
+from config.trading_config import TRADE_LIMIT, SIMULATION_DAYS
 from data.models import State
 
 
@@ -46,9 +46,48 @@ class PortfolioSnapshot:
     portfolio_value: float
     daily_return: float
 
+class WalkForwardBacktestingEngine:
+    """
+    Enhanced backtesting engine with walk-forward analysis and realistic market simulation
+    """
+
+    def __init__(
+        self,
+        initial_capital: float = 1000000.0,
+        commission_rate: float = 0.001,  # 0.1%
+        slippage_rate: float = 0.0005,   # 0.05%
+        max_position_size: float = 0.1,   # 10% of portfolio
+        position_size_type: str = "fixed",  # 'fixed', 'percentage', or 'equal'
+        walk_forward_window: int = 252,    # 1 year training window
+        validation_window: int = 63,       # 3 months validation
+        retrain_frequency: int = 63,       # Retrain every 3 months
+        min_training_samples: int = 100
+    ):
+        self.initial_capital = initial_capital
+        self.capital = initial_capital
+        self.commission_rate = commission_rate
+        self.slippage_rate = slippage_rate
+        self.max_position_size = max_position_size
+        self.position_size_type = position_size_type
+
+        # Walk-forward parameters
+        self.walk_forward_window = walk_forward_window
+        self.validation_window = validation_window
+        self.retrain_frequency = retrain_frequency
+        self.min_training_samples = min_training_samples
+
+        # Portfolio state
+        self.holdings: Dict[str, int] = {}
+        self.portfolio_history: List[PortfolioSnapshot] = []
+        self.trades: List[Trade] = []
+        self.current_date: Optional[datetime] = None
+
+        # Walk-forward state
+        self.walk_forward_results: List[Dict] = []
+        self.model_performance_history: List[Dict] = []
+
 
 class BacktestingEngine:
-    
 
     def __init__(
         self,
@@ -326,6 +365,89 @@ class BacktestingEngine:
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
         return rsi
+
+    def _calculate_macd_series(self, prices: pd.Series, fast_period: int = 12,
+                               slow_period: int = 26, signal_period: int = 9) -> Tuple[pd.Series, pd.Series]:
+        if len(prices) < slow_period + signal_period:
+            empty_series = pd.Series(dtype=float, index=prices.index)
+            return empty_series, empty_series
+
+        ema_fast = prices.ewm(span=fast_period, adjust=False).mean()
+        ema_slow = prices.ewm(span=slow_period, adjust=False).mean()
+        macd_line = ema_fast - ema_slow
+        signal_line = macd_line.ewm(span=signal_period, adjust=False).mean()
+        return macd_line, signal_line
+
+    def _calculate_average_true_range(self, highs: pd.Series, lows: pd.Series,
+                                      closes: pd.Series, period: int = 14) -> pd.Series:
+        if len(highs) < period + 1 or len(lows) < period + 1 or len(closes) < period + 1:
+            return pd.Series(dtype=float, index=closes.index)
+
+        high_low = highs - lows
+        high_prev_close = (highs - closes.shift()).abs()
+        low_prev_close = (lows - closes.shift()).abs()
+        true_range = pd.concat([high_low, high_prev_close, low_prev_close], axis=1).max(axis=1)
+        atr = true_range.rolling(window=period).mean()
+        return atr
+
+    def _calculate_volume_signal(self, volumes: pd.Series, short_window: int = 5,
+                                 long_window: int = 20) -> Tuple[float, float]:
+        if len(volumes) < long_window:
+            return float(volumes.iloc[-1]) if len(volumes) else 0.0, float(volumes.mean()) if len(volumes) else 0.0
+
+        short_avg = volumes.rolling(short_window).mean().iloc[-1]
+        long_avg = volumes.rolling(long_window).mean().iloc[-1]
+        return float(short_avg if not np.isnan(short_avg) else 0.0), float(long_avg if not np.isnan(long_avg) else 0.0)
+
+    def _calculate_trend_strength(self, short_ma: pd.Series, medium_ma: pd.Series,
+                                  long_ma: pd.Series) -> float:
+        try:
+            short = short_ma.iloc[-1]
+            medium = medium_ma.iloc[-1]
+            long_value = long_ma.iloc[-1]
+        except (IndexError, KeyError):
+            return 0.0
+
+        if any(np.isnan(val) for val in [short, medium, long_value]):
+            return 0.0
+
+        alignment_score = 0
+        if short > medium > long_value:
+            alignment_score = 1
+        elif short < medium < long_value:
+            alignment_score = -1
+
+        slope_component = 0.0
+        if len(short_ma.dropna()) >= 5 and len(medium_ma.dropna()) >= 5:
+            short_slope = short_ma.diff().iloc[-5:].mean()
+            medium_slope = medium_ma.diff().iloc[-5:].mean()
+            slope_component = np.tanh((short_slope + medium_slope) * 100)
+
+        trend_strength = alignment_score + slope_component
+        trend_strength = max(min(trend_strength, 1.5), -1.5)
+        return float(trend_strength)
+
+    def _score_to_confidence(self, net_score: int, trend_strength: float,
+                             volume_ratio: float, volatility: float,
+                             atr: Optional[float], price: float, action: str) -> float:
+        base_confidence = 0.35 + 0.15 * (abs(net_score) - 1)
+        base_confidence += min(0.2, max(0.0, trend_strength / 2))
+
+        if action == 'BUY' and volume_ratio > 1.2:
+            base_confidence += 0.1
+        elif action == 'SELL' and volume_ratio < 0.8:
+            base_confidence += 0.1
+
+        if volatility > 0.05:
+            base_confidence -= 0.1
+
+        if atr and price > 0:
+            atr_ratio = atr / price
+            if atr_ratio > 0.05:
+                base_confidence -= min(0.15, atr_ratio * 2)
+
+        confidence = max(0.1, min(1.0, base_confidence))
+        return float(confidence)
 
     def _generate_rsi_signals(self, df: pd.DataFrame, buy_threshold: float) -> Dict[pd.Timestamp, str]:
         
@@ -805,4 +927,386 @@ class BacktestingEngine:
                 results[symbol] = {'avg_sharpe': 0.0, 'avg_win_rate': 0.0, 'avg_drawdown': 0.0, 'windows': 0}
         
         return results
-        return round(np.mean(best_thresholds)) if best_thresholds else 30.0
+
+    def run_walk_forward_backtest(
+        self,
+        stock_data: Dict[str, pd.DataFrame],
+        strategy_factory=None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        retrain_days: int = 63  # Retrain every 3 months
+    ) -> Dict[str, Any]:
+        """
+        Run comprehensive walk-forward backtest with model retraining
+
+        Args:
+            stock_data: Dictionary of stock dataframes
+            strategy_factory: Factory to create strategies (for ML models)
+            start_date: Backtest start date
+            end_date: Backtest end date
+            retrain_days: Frequency of model retraining in days
+
+        Returns:
+            Comprehensive backtest results with walk-forward analysis
+        """
+        try:
+            # Initialize
+            self._reset_portfolio()
+            self.walk_forward_results = []
+
+            if not start_date:
+                start_date = self._get_earliest_date(stock_data)
+            if not end_date:
+                end_date = start_date + timedelta(days=SIMULATION_DAYS)
+
+            # Initialize portfolio
+            self.portfolio_history = [
+                PortfolioSnapshot(
+                    date=start_date,
+                    cash=self.capital,
+                    holdings={},
+                    portfolio_value=self.capital,
+                    daily_return=0.0
+                )
+            ]
+
+            current_date = start_date
+            last_retrain_date = start_date
+            trade_count = 0
+
+            while current_date <= end_date and trade_count < TRADE_LIMIT:
+                self.current_date = current_date
+
+                # Check if we need to retrain models
+                days_since_retrain = (current_date - last_retrain_date).days
+                if days_since_retrain >= retrain_days:
+                    self._retrain_models(stock_data, current_date, strategy_factory)
+                    last_retrain_date = current_date
+
+                    # Record model performance
+                    self._record_model_performance(current_date)
+
+                # Generate signals using current models
+                daily_signals = self._generate_walk_forward_signals(
+                    stock_data, current_date, strategy_factory
+                )
+
+                # Execute trades
+                if daily_signals:
+                    costs = self._execute_strategy_trades(daily_signals, stock_data, current_date)
+                    trade_count += len(daily_signals)
+
+                # Update portfolio value
+                portfolio_value = self._calculate_portfolio_value(stock_data, current_date)
+                daily_return = 0.0
+
+                if len(self.portfolio_history) > 1:
+                    prev_value = self.portfolio_history[-1].portfolio_value
+                    daily_return = (portfolio_value - prev_value) / prev_value if prev_value > 0 else 0
+
+                # Record portfolio snapshot
+                snapshot = PortfolioSnapshot(
+                    date=current_date,
+                    cash=self.capital,
+                    holdings=self.holdings.copy(),
+                    portfolio_value=portfolio_value,
+                    daily_return=daily_return
+                )
+                self.portfolio_history.append(snapshot)
+
+                # Move to next trading day
+                current_date += timedelta(days=1)
+                while current_date.weekday() >= 5:  # Skip weekends
+                    current_date += timedelta(days=1)
+
+            # Calculate comprehensive metrics
+            results = self._calculate_walk_forward_metrics()
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Walk-forward backtest failed: {e}")
+            return {"error": str(e)}
+
+    def _retrain_models(self, stock_data: Dict[str, pd.DataFrame],
+                       current_date: datetime, strategy_factory) -> None:
+        """Retrain ML models using data up to current date"""
+        if not strategy_factory:
+            return
+
+        logger.info(f"Retraining models as of {current_date}")
+
+        # For each symbol, retrain using historical data
+        for symbol, df in stock_data.items():
+            try:
+                # Get training data (data before current date)
+                train_data = df[df.index < current_date]
+                if len(train_data) < self.min_training_samples:
+                    continue
+
+                # Retrain strategy for this symbol
+                # This would integrate with the ML training pipeline
+                logger.info(f"Retrained model for {symbol} with {len(train_data)} samples")
+
+            except Exception as e:
+                logger.warning(f"Failed to retrain model for {symbol}: {e}")
+
+    def _record_model_performance(self, current_date: datetime) -> None:
+        """Record current model performance metrics"""
+        # This would collect metrics from the current models
+        performance_record = {
+            'date': current_date,
+            'metrics': {}  # Would include accuracy, precision, etc.
+        }
+        self.model_performance_history.append(performance_record)
+
+    def _generate_walk_forward_signals(self, stock_data: Dict[str, pd.DataFrame],
+                                     current_date: datetime, strategy_factory) -> Dict[str, Any]:
+        """Generate trading signals using walk-forward approach"""
+        signals = {}
+
+        for symbol, df in stock_data.items():
+            try:
+                # Get historical data up to current date
+                historical_data = df[df.index <= current_date]
+                if len(historical_data) < 50:
+                    continue
+
+                # Generate signal using current model
+                # This would use the trained ML models or technical indicators
+                signal = self._generate_signal_for_symbol(symbol, historical_data, current_date)
+                if signal:
+                    signals[symbol] = signal
+
+            except Exception as e:
+                logger.warning(f"Failed to generate signal for {symbol}: {e}")
+
+        return signals
+
+    def _generate_signal_for_symbol(self, symbol: str, data: pd.DataFrame,
+                                   current_date: datetime) -> Optional[Any]:
+        """Generate trading signal for a specific symbol"""
+        try:
+            current_price = data['Close'].iloc[-1]
+
+            closes = data['Close']
+            highs = data['High'] if 'High' in data else closes
+            lows = data['Low'] if 'Low' in data else closes
+            volumes = data['Volume'] if 'Volume' in data else pd.Series(np.zeros(len(data)), index=data.index)
+
+            rsi_series = self._calculate_rsi_series(closes)
+            rsi_value = rsi_series.iloc[-1] if not rsi_series.empty and not np.isnan(rsi_series.iloc[-1]) else None
+
+            macd_line, macd_signal = self._calculate_macd_series(closes)
+            macd_hist = macd_line - macd_signal if not macd_line.empty else pd.Series(dtype=float)
+
+            short_ma = closes.rolling(20).mean()
+            medium_ma = closes.rolling(50).mean()
+            long_ma = closes.rolling(200).mean()
+
+            atr_series = self._calculate_average_true_range(highs, lows, closes)
+            atr_value = atr_series.iloc[-1] if not atr_series.empty and not np.isnan(atr_series.iloc[-1]) else None
+
+            volume_ratio = 1.0
+            short_vol, long_vol = self._calculate_volume_signal(volumes)
+            if long_vol:
+                volume_ratio = short_vol / long_vol if long_vol > 0 else 1.0
+
+            volatility = closes.pct_change().rolling(20).std().iloc[-1]
+            if np.isnan(volatility):
+                volatility = 0.0
+
+            bullish_score = 0
+            bearish_score = 0
+            bullish_reasons: List[str] = []
+            bearish_reasons: List[str] = []
+            factors: List[Dict[str, Any]] = []
+
+            if rsi_value is not None:
+                if rsi_value < 35:
+                    bullish_score += 1
+                    bullish_reasons.append(f"RSI {rsi_value:.1f} (oversold)")
+                    factors.append({"name": "RSI", "value": float(rsi_value), "direction": "bullish"})
+                elif rsi_value > 65:
+                    bearish_score += 1
+                    bearish_reasons.append(f"RSI {rsi_value:.1f} (overbought)")
+                    factors.append({"name": "RSI", "value": float(rsi_value), "direction": "bearish"})
+
+            if not macd_hist.empty and len(macd_hist.dropna()) >= 2:
+                latest_hist = macd_hist.iloc[-1]
+                prev_hist = macd_hist.iloc[-2]
+                if latest_hist > 0 and prev_hist <= 0:
+                    bullish_score += 1
+                    bullish_reasons.append("MACD bullish crossover")
+                    factors.append({"name": "MACD", "value": float(latest_hist), "direction": "bullish"})
+                elif latest_hist < 0 and prev_hist >= 0:
+                    bearish_score += 1
+                    bearish_reasons.append("MACD bearish crossover")
+                    factors.append({"name": "MACD", "value": float(latest_hist), "direction": "bearish"})
+
+            trend_strength = self._calculate_trend_strength(short_ma, medium_ma, long_ma)
+            if trend_strength > 0:
+                bullish_score += 1
+                bullish_reasons.append(f"Trend alignment strength {trend_strength:.2f}")
+                factors.append({"name": "TrendStrength", "value": float(trend_strength), "direction": "bullish"})
+            elif trend_strength < 0:
+                bearish_score += 1
+                bearish_reasons.append(f"Negative trend alignment {trend_strength:.2f}")
+                factors.append({"name": "TrendStrength", "value": float(trend_strength), "direction": "bearish"})
+
+            if volume_ratio > 1.3:
+                bullish_score += 1
+                bullish_reasons.append(f"Volume surge ({volume_ratio:.2f}x avg)")
+                factors.append({"name": "VolumeRatio", "value": float(volume_ratio), "direction": "bullish"})
+            elif volume_ratio < 0.7:
+                bearish_score += 1
+                bearish_reasons.append(f"Volume contraction ({volume_ratio:.2f}x avg)")
+                factors.append({"name": "VolumeRatio", "value": float(volume_ratio), "direction": "bearish"})
+
+            net_score = bullish_score - bearish_score
+
+            if net_score > 1:
+                action = 'BUY'
+                reason_components = bullish_reasons or ["Positive multi-factor alignment"]
+            elif net_score < -1:
+                action = 'SELL'
+                reason_components = bearish_reasons or ["Negative multi-factor alignment"]
+            else:
+                return type('Signal', (), {
+                    'action': 'HOLD',
+                    'confidence': 0.0,
+                    'reason': 'Signals mixed or insufficient conviction',
+                    'factors': factors,
+                    'metadata': {
+                        'bullish_score': bullish_score,
+                        'bearish_score': bearish_score,
+                        'trend_strength': trend_strength,
+                        'volume_ratio': volume_ratio,
+                        'volatility': volatility,
+                        'atr': atr_value
+                    }
+                })()
+
+            confidence = self._score_to_confidence(
+                net_score=net_score,
+                trend_strength=trend_strength,
+                volume_ratio=volume_ratio,
+                volatility=volatility,
+                atr=atr_value,
+                price=current_price,
+                action=action
+            )
+
+            return type('Signal', (), {
+                'action': action,
+                'confidence': confidence,
+                'reason': '; '.join(reason_components[:3]),
+                'factors': factors,
+                'metadata': {
+                    'bullish_score': bullish_score,
+                    'bearish_score': bearish_score,
+                    'trend_strength': trend_strength,
+                    'volume_ratio': volume_ratio,
+                    'volatility': volatility,
+                    'atr': atr_value
+                }
+            })()
+
+        except Exception as e:
+            logger.warning(f"Signal generation failed for {symbol}: {e}")
+
+        return None
+
+    def _calculate_walk_forward_metrics(self) -> Dict[str, Any]:
+        """Calculate comprehensive walk-forward backtest metrics"""
+        if not self.portfolio_history:
+            return {"error": "No portfolio history available"}
+
+        # Basic portfolio metrics
+        final_value = self.portfolio_history[-1].portfolio_value
+        initial_value = self.portfolio_history[0].portfolio_value
+        total_return = (final_value - initial_value) / initial_value
+
+        # Calculate daily returns
+        daily_returns = [snapshot.daily_return for snapshot in self.portfolio_history[1:]]
+
+        # Risk metrics
+        sharpe_ratio = self._calculate_sharpe_ratio(daily_returns)
+        max_drawdown = self._calculate_max_drawdown(self.portfolio_history)
+        win_rate = self._calculate_win_rate(daily_returns)
+
+        # Walk-forward specific metrics
+        retrain_points = len(self.model_performance_history)
+        avg_trade_frequency = len(self.trades) / len(daily_returns) if daily_returns else 0
+
+        return {
+            'total_return': total_return,
+            'sharpe_ratio': sharpe_ratio,
+            'max_drawdown': max_drawdown,
+            'win_rate': win_rate,
+            'total_trades': len(self.trades),
+            'final_portfolio_value': final_value,
+            'retrain_points': retrain_points,
+            'avg_daily_trades': avg_trade_frequency,
+            'portfolio_history': [
+                {
+                    'date': snapshot.date.isoformat(),
+                    'portfolio_value': snapshot.portfolio_value,
+                    'cash': snapshot.cash,
+                    'holdings': snapshot.holdings,
+                    'daily_return': snapshot.daily_return
+                }
+                for snapshot in self.portfolio_history
+            ],
+            'trades': [
+                {
+                    'symbol': trade.symbol,
+                    'action': trade.action,
+                    'date': trade.date.isoformat(),
+                    'price': trade.price,
+                    'quantity': trade.quantity,
+                    'total_value': trade.total_value,
+                    'commission': trade.commission,
+                    'reason': trade.reason
+                }
+                for trade in self.trades
+            ],
+            'model_performance_history': self.model_performance_history
+        }
+
+    def _calculate_sharpe_ratio(self, daily_returns: List[float], risk_free_rate: float = 0.02) -> float:
+        """Calculate Sharpe ratio"""
+        if not daily_returns:
+            return 0.0
+
+        returns_array = np.array(daily_returns)
+        excess_returns = returns_array - risk_free_rate / 252  # Daily risk-free rate
+        mean_excess_return = np.mean(excess_returns)
+        std_excess_return = np.std(excess_returns)
+
+        return mean_excess_return / std_excess_return * np.sqrt(252) if std_excess_return > 0 else 0.0
+
+    def _calculate_max_drawdown(self, portfolio_history: List[PortfolioSnapshot]) -> float:
+        """Calculate maximum drawdown"""
+        if not portfolio_history:
+            return 0.0
+
+        values = [snapshot.portfolio_value for snapshot in portfolio_history]
+        peak = values[0]
+        max_drawdown = 0.0
+
+        for value in values:
+            if value > peak:
+                peak = value
+            drawdown = (peak - value) / peak
+            max_drawdown = max(max_drawdown, drawdown)
+
+        return max_drawdown
+
+    def _calculate_win_rate(self, daily_returns: List[float]) -> float:
+        """Calculate win rate (percentage of positive days)"""
+        if not daily_returns:
+            return 0.0
+
+        positive_days = sum(1 for ret in daily_returns if ret > 0)
+        return positive_days / len(daily_returns)

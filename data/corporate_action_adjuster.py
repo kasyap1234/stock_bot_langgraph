@@ -1,12 +1,3 @@
-"""
-Corporate Action Adjustment System for Stock Bot
-
-This module implements corporate action adjustments including:
-- Historical data adjustment for stock splits and dividends
-- Consistency maintenance algorithms
-- Detection and correction of corporate actions
-- Validation of adjusted data
-"""
 
 import logging
 import numpy as np
@@ -16,13 +7,14 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
 
+import yfinance as yf
+
 from .models import StockData, HistoricalData, create_stock_data
 
 logger = logging.getLogger(__name__)
 
 
 class CorporateActionType(Enum):
-    """Types of corporate actions"""
     STOCK_SPLIT = "stock_split"
     STOCK_DIVIDEND = "stock_dividend"
     CASH_DIVIDEND = "cash_dividend"
@@ -34,7 +26,6 @@ class CorporateActionType(Enum):
 
 @dataclass
 class CorporateAction:
-    """Represents a corporate action"""
     date: datetime
     action_type: CorporateActionType
     ratio: float  # Split ratio (e.g., 2.0 for 2:1 split)
@@ -46,7 +37,6 @@ class CorporateAction:
 
 @dataclass
 class AdjustmentResult:
-    """Result of corporate action adjustment"""
     original_count: int
     adjusted_count: int
     actions_detected: List[CorporateAction]
@@ -57,17 +47,12 @@ class AdjustmentResult:
 
 @dataclass
 class AdjustedData:
-    """Data after corporate action adjustments"""
     data: HistoricalData
     adjustment_result: AdjustmentResult
     metadata: Dict[str, Any]
 
 
 class CorporateActionAdjuster:
-    """
-    Corporate action adjustment system for stock market data
-    """
-    
     def __init__(self,
                  split_detection_threshold: float = 0.4,    # 40% price change for split detection
                  dividend_detection_threshold: float = 0.02, # 2% price drop for dividend detection
@@ -78,20 +63,10 @@ class CorporateActionAdjuster:
         self.dividend_detection_threshold = dividend_detection_threshold
         self.volume_spike_threshold = volume_spike_threshold
         self.confidence_threshold = confidence_threshold
+        self._external_actions_cache: Dict[str, Dict[str, pd.Series]] = {}
     
     def adjust_for_corporate_actions(self, data: HistoricalData, symbol: str,
                                    known_actions: Optional[List[CorporateAction]] = None) -> AdjustedData:
-        """
-        Adjust historical data for corporate actions
-        
-        Args:
-            data: Historical stock data to adjust
-            symbol: Stock symbol
-            known_actions: Optional list of known corporate actions
-            
-        Returns:
-            AdjustedData with corporate action adjustments applied
-        """
         # FIXED: Added input validation
         if not data:
             return AdjustedData(
@@ -146,7 +121,6 @@ class CorporateActionAdjuster:
         )
     
     def _convert_to_dataframe(self, data: HistoricalData) -> pd.DataFrame:
-        """Convert HistoricalData to pandas DataFrame"""
         df_data = []
         for record in data:
             df_data.append({
@@ -165,7 +139,6 @@ class CorporateActionAdjuster:
         return df
     
     def _detect_corporate_actions(self, df: pd.DataFrame, symbol: str) -> List[CorporateAction]:
-        """Detect corporate actions from price and volume patterns"""
         actions = []
         
         if len(df) < 2:
@@ -185,21 +158,19 @@ class CorporateActionAdjuster:
         return actions
     
     def _detect_stock_splits(self, df: pd.DataFrame, symbol: str) -> List[CorporateAction]:
-        """Detect stock splits from price patterns"""
         # FIXED: Added input validation
         if df.empty:
             return []
         
         splits = []
+        external_actions = self._load_external_corporate_actions(symbol)
+        split_reference = external_actions.get("splits") if external_actions else None
         
         # Look for sudden large price drops with volume spikes
         split_candidates = (
             (df['daily_return'] < -self.split_detection_threshold) |  # Large price drop
             (df['daily_return'] > self.split_detection_threshold)     # Large price increase (reverse split)
         ) & (df['volume_ratio'] > self.volume_spike_threshold)        # Volume spike
-        
-        # FIXED: Added TODO for NSE API integration
-        # TODO: Integrate NSE API for verification
         
         for date, row in df[split_candidates].iterrows():
             daily_return = row['daily_return']
@@ -226,6 +197,14 @@ class CorporateActionAdjuster:
             elif volume_ratio < 2.0:
                 confidence -= 0.2
             
+            reference_ratio = self._match_reference_split(split_reference, date)
+            if reference_ratio:
+                ratio = reference_ratio
+                confidence = min(1.0, confidence + 0.2)
+                description_suffix = " (verified via yfinance)"
+            else:
+                description_suffix = ""
+
             confidence = max(0.1, min(1.0, confidence))
             
             split = CorporateAction(
@@ -233,7 +212,7 @@ class CorporateActionAdjuster:
                 action_type=CorporateActionType.STOCK_SPLIT,
                 ratio=ratio,
                 dividend_amount=0.0,
-                description=f"Detected {ratio}:1 stock split on {date.date()}",
+                description=f"Detected {ratio}:1 stock split on {date.date()}" + description_suffix,
                 confidence=confidence,
                 detected_automatically=True
             )
@@ -242,8 +221,9 @@ class CorporateActionAdjuster:
         return splits
     
     def _detect_dividends(self, df: pd.DataFrame, symbol: str) -> List[CorporateAction]:
-        """Detect dividend payments from price patterns"""
         dividends = []
+        external_actions = self._load_external_corporate_actions(symbol)
+        dividend_reference = external_actions.get("dividends") if external_actions else None
         
         # Look for moderate price drops with volume spikes (ex-dividend effect)
         dividend_candidates = (
@@ -273,6 +253,14 @@ class CorporateActionAdjuster:
             elif volume_ratio < 2.0:
                 confidence -= 0.1
             
+            reference_dividend = self._match_reference_dividend(dividend_reference, date)
+            if reference_dividend is not None:
+                estimated_dividend = reference_dividend
+                confidence = min(1.0, confidence + 0.2)
+                description_suffix = " (verified via yfinance)"
+            else:
+                description_suffix = ""
+
             confidence = max(0.1, min(1.0, confidence))
             
             dividend = CorporateAction(
@@ -280,16 +268,80 @@ class CorporateActionAdjuster:
                 action_type=CorporateActionType.CASH_DIVIDEND,
                 ratio=1.0,
                 dividend_amount=estimated_dividend,
-                description=f"Detected ${estimated_dividend:.2f} dividend payment on {date.date()}",
+                description=f"Detected ${estimated_dividend:.2f} dividend payment on {date.date()}" + description_suffix,
                 confidence=confidence,
                 detected_automatically=True
             )
             dividends.append(dividend)
         
         return dividends
+
+    def _load_external_corporate_actions(self, symbol: str) -> Dict[str, pd.Series]:
+        if symbol in self._external_actions_cache:
+            return self._external_actions_cache[symbol]
+
+        normalized_symbol = symbol
+        try:
+            ticker = yf.Ticker(normalized_symbol)
+            actions = ticker.actions
+
+            splits = pd.Series(dtype=float)
+            dividends = pd.Series(dtype=float)
+
+            if isinstance(actions, pd.DataFrame) and not actions.empty:
+                if 'Stock Splits' in actions.columns:
+                    splits = actions['Stock Splits'].dropna()
+                if 'Dividends' in actions.columns:
+                    dividends = actions['Dividends'].dropna()
+            else:
+                splits = ticker.splits.dropna() if hasattr(ticker, 'splits') else pd.Series(dtype=float)
+                dividends = ticker.dividends.dropna() if hasattr(ticker, 'dividends') else pd.Series(dtype=float)
+
+            if hasattr(splits, 'index') and not splits.empty:
+                splits.index = pd.to_datetime(splits.index)
+            if hasattr(dividends, 'index') and not dividends.empty:
+                dividends.index = pd.to_datetime(dividends.index)
+
+            external_data = {
+                "splits": splits,
+                "dividends": dividends
+            }
+            self._external_actions_cache[symbol] = external_data
+            return external_data
+        except Exception as exc:
+            logger.warning(f"Failed to load external corporate actions for {symbol}: {exc}")
+            self._external_actions_cache[symbol] = {}
+            return {}
+
+    def _match_reference_split(self, splits: Optional[pd.Series], action_date: datetime) -> Optional[float]:
+        if splits is None or splits.empty:
+            return None
+
+        window_start = action_date - timedelta(days=3)
+        window_end = action_date + timedelta(days=3)
+        candidates = splits[(splits.index >= window_start) & (splits.index <= window_end)]
+
+        if candidates.empty:
+            return None
+
+        ratio = candidates.iloc[0]
+        return float(ratio) if ratio else None
+
+    def _match_reference_dividend(self, dividends: Optional[pd.Series], action_date: datetime) -> Optional[float]:
+        if dividends is None or dividends.empty:
+            return None
+
+        window_start = action_date - timedelta(days=3)
+        window_end = action_date + timedelta(days=3)
+        candidates = dividends[(dividends.index >= window_start) & (dividends.index <= window_end)]
+
+        if candidates.empty:
+            return None
+
+        amount = candidates.iloc[0]
+        return float(amount)
     
     def _apply_adjustments(self, df: pd.DataFrame, actions: List[CorporateAction]) -> Tuple[pd.DataFrame, List[CorporateAction], List[str]]:
-        """Apply corporate action adjustments to the data"""
         adjusted_df = df.copy()
         applied_actions = []
         warnings = []
@@ -316,7 +368,6 @@ class CorporateActionAdjuster:
         return adjusted_df, applied_actions, warnings
     
     def _apply_stock_split_adjustment(self, df: pd.DataFrame, action: CorporateAction) -> pd.DataFrame:
-        """Apply stock split adjustment to historical data"""
         adjusted_df = df.copy()
         
         # Adjust all data before the split date
@@ -334,7 +385,6 @@ class CorporateActionAdjuster:
         return adjusted_df
     
     def _apply_dividend_adjustment(self, df: pd.DataFrame, action: CorporateAction) -> pd.DataFrame:
-        """Apply dividend adjustment to historical data"""
         # FIXED: Subtract dividend from post-ex-date prices
         adjusted_df = df.copy()
         
@@ -349,10 +399,9 @@ class CorporateActionAdjuster:
         
         return adjusted_df
     
-    def _calculate_adjustment_quality(self, original_df: pd.DataFrame, 
-                                    adjusted_df: pd.DataFrame, 
-                                    applied_actions: List[CorporateAction]) -> float:
-        """Calculate quality score for the adjustments"""
+    def _calculate_adjustment_quality(self, original_df: pd.DataFrame,
+                                   adjusted_df: pd.DataFrame,
+                                   applied_actions: List[CorporateAction]) -> float:
         if original_df.empty or adjusted_df.empty:
             return 0.0
         
@@ -385,7 +434,6 @@ class CorporateActionAdjuster:
         return max(0.0, quality)
     
     def _convert_to_historical_data(self, df: pd.DataFrame, symbol: str) -> HistoricalData:
-        """Convert DataFrame back to HistoricalData format"""
         data = []
         for date, row in df.iterrows():
             stock_data = create_stock_data(
@@ -401,9 +449,8 @@ class CorporateActionAdjuster:
         
         return data
     
-    def validate_adjustments(self, original_data: HistoricalData, 
+    def validate_adjustments(self, original_data: HistoricalData,
                            adjusted_data: HistoricalData) -> Dict[str, Any]:
-        """Validate that adjustments were applied correctly"""
         validation_result = {
             'is_valid': True,
             'issues': [],
@@ -460,18 +507,6 @@ class CorporateActionAdjuster:
 def adjust_for_corporate_actions(data: HistoricalData, symbol: str,
                                known_actions: Optional[List[CorporateAction]] = None,
                                adjuster: Optional[CorporateActionAdjuster] = None) -> AdjustedData:
-    """
-    Convenience function to adjust data for corporate actions
-    
-    Args:
-        data: Historical stock data to adjust
-        symbol: Stock symbol
-        known_actions: Optional list of known corporate actions
-        adjuster: Optional custom adjuster instance
-        
-    Returns:
-        AdjustedData with corporate action adjustments applied
-    """
     if adjuster is None:
         adjuster = CorporateActionAdjuster()
     

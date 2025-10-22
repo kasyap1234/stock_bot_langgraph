@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import Mock, patch
 import pandas as pd
 from data.apis import get_stock_history, get_fundamentals, get_stock_info, _retry_with_backoff
-from config.config import ALPHA_VANTAGE_API_KEY
+from config.api_config import ALPHA_VANTAGE_API_KEY
 
 MOCK_HISTORY_DATAFRAME = pd.DataFrame({
     'Open': [150.0, 152.0, 151.5],

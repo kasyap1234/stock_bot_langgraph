@@ -2,9 +2,10 @@
 
 import logging
 from functools import lru_cache
-from typing import Dict, List
+from typing import Dict, List, Any
 
-from config.config import DEFAULT_STOCKS, TWITTER_BEARER_TOKEN
+from config.constants import DEFAULT_STOCKS
+from config.api_config import TWITTER_BEARER_TOKEN
 from data.models import State
 from data.apis import get_news_articles
 

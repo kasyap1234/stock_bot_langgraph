@@ -28,68 +28,92 @@ def macro_analysis_agent(state: State) -> State:
 
     try:
         repo_data = macro_data.get('RBI Repo Rate', {})
-        repo_rate = repo_data.get('value', 6.5)
+        repo_rate = repo_data.get('value')
         is_default = repo_data.get('date') == 'default'
-        if is_default:
-            logging.warning(f"Using default RBI Repo Rate: {repo_rate}% (API data unavailable)")
-        if repo_rate > 7.0:
-            repo_score = -1.0
-        elif repo_rate > 6.5:
-            repo_score = -0.5
-        elif repo_rate > 5.5:
+        
+        if is_default or repo_rate is None:
+            logging.error(f"RBI Repo Rate data unavailable from API - macro analysis may be inaccurate")
+            # Use conservative neutral score when data is unavailable
             repo_score = 0.0
+            macro_scores['RBI_REPO'] = repo_score
+            macro_scores['RBI_REPO_warning'] = "Data unavailable, using neutral score"
         else:
-            repo_score = 0.5
-        macro_scores['RBI_REPO'] = repo_score
-        logging.info(f"RBI Repo Rate score: {repo_score} (rate: {repo_rate}%) - Contribution to composite: {repo_score * 0.3:.2f}")
+            if repo_rate > 7.0:
+                repo_score = -1.0
+            elif repo_rate > 6.5:
+                repo_score = -0.5
+            elif repo_rate > 5.5:
+                repo_score = 0.0
+            else:
+                repo_score = 0.5
+            macro_scores['RBI_REPO'] = repo_score
+        
+        logging.info(f"RBI Repo Rate score: {repo_score} (rate: {repo_rate if not is_default else 'unavailable'}%) - Contribution to composite: {repo_score * 0.3:.2f}")
     except Exception as e:
         logger.error(f"Error calculating RBI Repo Rate score: {e}")
         macro_scores['RBI_REPO'] = 0.0
-        logging.info("RBI Repo Rate score: 0.0 (default due to error)")
+        macro_scores['RBI_REPO_error'] = str(e)
+        logging.info("RBI Repo Rate score: 0.0 (error occurred)")
 
     try:
         unrate_data = macro_data.get('Unemployment Rate', {})
-        unrate = unrate_data.get('value', 7.0)
+        unrate = unrate_data.get('value')
         is_default = unrate_data.get('date') == 'default'
-        if is_default:
-            logging.warning(f"Failed to fetch Unemployment Rate from FRED: Bad Request. Series tried: LRUN64TTINQ, INDUNEMP, UNRATE. Using default: {unrate}%")
-        if unrate > 8.0:
-            unrate_score = -1.0
-        elif unrate > 6.5:
-            unrate_score = -0.5
-        elif unrate > 5.0:
+        
+        if is_default or unrate is None:
+            logging.error(f"Unemployment Rate data unavailable from FRED - macro analysis may be inaccurate")
+            # Use conservative neutral score when data is unavailable
             unrate_score = 0.0
+            macro_scores['INDIA_UNRATE'] = unrate_score
+            macro_scores['INDIA_UNRATE_warning'] = "Data unavailable, using neutral score"
         else:
-            unrate_score = 0.5
-        macro_scores['INDIA_UNRATE'] = unrate_score
-        logging.info(f"India Unemployment Rate score: {unrate_score} (rate: {unrate}%) - Contribution to composite: {unrate_score * 0.3:.2f}")
+            if unrate > 8.0:
+                unrate_score = -1.0
+            elif unrate > 6.5:
+                unrate_score = -0.5
+            elif unrate > 5.0:
+                unrate_score = 0.0
+            else:
+                unrate_score = 0.5
+            macro_scores['INDIA_UNRATE'] = unrate_score
+        
+        logging.info(f"India Unemployment Rate score: {unrate_score} (rate: {unrate if not is_default else 'unavailable'}%) - Contribution to composite: {unrate_score * 0.3:.2f}")
     except Exception as e:
         logger.error(f"Error calculating India Unemployment Rate score: {e}")
         macro_scores['INDIA_UNRATE'] = 0.0
-        logging.info("India Unemployment Rate score: 0.0 (default due to error)")
+        macro_scores['INDIA_UNRATE_error'] = str(e)
+        logging.info("India Unemployment Rate score: 0.0 (error occurred)")
 
     try:
         gdp_data = macro_data.get('GDP Growth Rate YoY', {})
-        gdp_growth = gdp_data.get('value', 6.5)
+        gdp_growth = gdp_data.get('value')
         is_default = gdp_data.get('date') == 'default'
-        if is_default:
-            logging.warning(f"Using default GDP Growth Rate: {gdp_growth}% (API data unavailable)")
-        if gdp_growth > 8.0:
-            gdp_score = 1.0
-        elif gdp_growth > 7.0:
-            gdp_score = 0.5
-        elif gdp_growth > 5.0:
+        
+        if is_default or gdp_growth is None:
+            logging.error(f"GDP Growth Rate data unavailable from API - macro analysis may be inaccurate")
+            # Use conservative neutral score when data is unavailable
             gdp_score = 0.0
-        elif gdp_growth > 4.0:
-            gdp_score = -0.5
+            macro_scores['INDIA_GDP'] = gdp_score
+            macro_scores['INDIA_GDP_warning'] = "Data unavailable, using neutral score"
         else:
-            gdp_score = -1.0
-        macro_scores['INDIA_GDP'] = gdp_score
-        logging.info(f"India GDP Growth score: {gdp_score} (growth: {gdp_growth}%) - Contribution to composite: {gdp_score * 0.4:.2f}")
+            if gdp_growth > 8.0:
+                gdp_score = 1.0
+            elif gdp_growth > 7.0:
+                gdp_score = 0.5
+            elif gdp_growth > 5.0:
+                gdp_score = 0.0
+            elif gdp_growth > 4.0:
+                gdp_score = -0.5
+            else:
+                gdp_score = -1.0
+            macro_scores['INDIA_GDP'] = gdp_score
+        
+        logging.info(f"India GDP Growth score: {gdp_score} (growth: {gdp_growth if not is_default else 'unavailable'}%) - Contribution to composite: {gdp_score * 0.4:.2f}")
     except Exception as e:
         logger.error(f"Error calculating India GDP Growth score: {e}")
         macro_scores['INDIA_GDP'] = 0.0
-        logging.info("India GDP Growth score: 0.0 (default due to error)")
+        macro_scores['INDIA_GDP_error'] = str(e)
+        logging.info("India GDP Growth score: 0.0 (error occurred)")
 
     weights = {'INDIA_GDP': 0.4, 'RBI_REPO': 0.3, 'INDIA_UNRATE': 0.3}
     composite_macro = sum(macro_scores[key] * weights[key] for key in weights)

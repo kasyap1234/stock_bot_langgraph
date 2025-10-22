@@ -6,7 +6,7 @@ import sys
 from typing import Optional, Dict, Any
 from pathlib import Path
 
-from config.config import LOG_LEVEL, LOG_FORMAT
+from config.constants import LOG_LEVEL, LOG_FORMAT
 
 
 def setup_logging(

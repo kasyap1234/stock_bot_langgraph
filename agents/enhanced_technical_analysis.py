@@ -1,13 +1,3 @@
-"""
-Enhanced Technical Analysis Engine with Signal Quality Control and Performance Tracking
-
-This module provides advanced technical analysis capabilities with:
-- Signal quality scoring and filtering
-- Multi-timeframe analysis with consistency checks
-- Dynamic parameter adjustment based on market conditions
-- Performance-based indicator weighting
-- Historical performance tracking for continuous improvement
-"""
 
 import logging
 from typing import Dict, List, Any, Optional, Tuple
@@ -22,9 +12,60 @@ import os
 logger = logging.getLogger(__name__)
 
 
+def calculate_ema_talib(series: pd.Series, period: int) -> pd.Series:
+    """Calculate EMA using TA-Lib initialization method."""
+    series = series.ffill()  # Forward fill to handle gaps/NaNs before processing
+    n = len(series)
+    if n == 0:
+        return pd.Series(np.full(n, np.nan), index=series.index)
+
+    alpha = 2.0 / (period + 1.0)
+    ema = np.full(n, np.nan)
+
+    # Find first non-NaN index
+    first_valid_idx = series.first_valid_index()
+    if first_valid_idx is None or pd.isna(first_valid_idx):
+        return pd.Series(ema, index=series.index)
+
+    first_valid_pos = series.index.get_loc(first_valid_idx)
+    if n - first_valid_pos < period:
+        # Not enough data after first valid
+        for i in range(first_valid_pos, n):
+            if not pd.isna(series.iloc[i]):
+                ema[i] = series.iloc[i]  # Just copy if insufficient
+        return pd.Series(ema, index=series.index)
+
+    # Find the position for initialization: first_valid_pos + period - 1
+    init_pos = first_valid_pos + period - 1
+    if init_pos >= n:
+        init_pos = n - 1
+
+    # FIXED: SMA over the first 'period' valid values starting from first_valid
+    valid_start = first_valid_pos
+    valid_data = series.iloc[valid_start:init_pos + 1].dropna()
+    if len(valid_data) >= period:
+        sma_init = valid_data.iloc[0:period].mean()
+    else:
+        # If less than period valid, use all available
+        sma_init = valid_data.mean()
+
+    ema[init_pos] = sma_init
+
+    # Forward fill the recursive calculation
+    for i in range(init_pos + 1, n):
+        if pd.isna(series.iloc[i]):
+            continue  # Skip NaNs in input
+        ema[i] = alpha * series.iloc[i] + (1.0 - alpha) * ema[i - 1]
+
+    # Backward fill if needed, but usually not for EMA
+    # For positions between first_valid and init_pos, we can approximate by simple average or leave NaN
+
+    ema_series = pd.Series(ema, index=series.index).ffill()  # Final forward fill for any remaining NaNs
+    return ema_series
+
+
 @dataclass
 class Signal:
-    """Represents a trading signal with quality metrics"""
     indicator: str
     direction: str  # 'buy', 'sell', 'neutral'
     strength: float  # 0.0 to 1.0
@@ -36,7 +77,6 @@ class Signal:
 
 @dataclass
 class IndicatorPerformance:
-    """Tracks performance metrics for individual indicators"""
     indicator_name: str
     total_signals: int
     correct_signals: int
@@ -48,8 +88,6 @@ class IndicatorPerformance:
 
 
 class SignalQualityFilter:
-    """Filters and scores signals based on quality metrics"""
-    
     def __init__(self, min_confidence: float = 0.3, min_strength: float = 0.2):
         self.min_confidence = min_confidence
         self.min_strength = min_strength
@@ -57,7 +95,6 @@ class SignalQualityFilter:
         self.historical_performance = {}  # Track signal performance for scoring
         
     def filter_signals(self, signals: List[Signal]) -> List[Signal]:
-        """Filter out low-quality signals with noise filtering"""
         filtered_signals = []
         
         for signal in signals:
@@ -70,13 +107,11 @@ class SignalQualityFilter:
         return filtered_signals
     
     def _is_high_quality(self, signal: Signal) -> bool:
-        """Determine if a signal meets quality thresholds"""
-        return (signal.confidence >= self.min_confidence and 
+        return (signal.confidence >= self.min_confidence and
                 signal.strength >= self.min_strength and
                 signal.direction != 'neutral')
     
     def _is_noise(self, signal: Signal) -> bool:
-        """Detect if signal is likely noise based on historical patterns"""
         # Check for rapid signal reversals (noise indicator)
         if hasattr(signal, 'metadata') and 'recent_signals' in signal.metadata:
             recent_signals = signal.metadata['recent_signals']
@@ -100,7 +135,6 @@ class SignalQualityFilter:
         return False
     
     def score_signal_quality(self, signal: Signal, market_context: Dict[str, Any]) -> float:
-        """Score signal quality based on multiple factors including historical performance"""
         base_score = (signal.confidence + signal.strength) / 2
         
         # Adjust for market volatility
@@ -142,7 +176,6 @@ class SignalQualityFilter:
         return min(final_score, 1.0)
     
     def _get_historical_performance_score(self, indicator: str, market_context: Dict[str, Any]) -> float:
-        """Get historical performance adjustment for indicator"""
         if indicator not in self.historical_performance:
             return 1.0  # Neutral for unknown indicators
             
@@ -157,9 +190,8 @@ class SignalQualityFilter:
         adjustment = 0.5 + regime_performance
         return min(max(adjustment, 0.3), 1.7)  # Clamp between 0.3 and 1.7
     
-    def update_historical_performance(self, indicator: str, accuracy: float, 
-                                    market_regime: str = 'unknown'):
-        """Update historical performance data for quality scoring"""
+    def update_historical_performance(self, indicator: str, accuracy: float,
+                                   market_regime: str = 'unknown'):
         if indicator not in self.historical_performance:
             self.historical_performance[indicator] = {
                 'accuracy': accuracy,
@@ -183,9 +215,8 @@ class SignalQualityFilter:
                 alpha * accuracy + (1 - alpha) * regime_perf[market_regime]
             )
     
-    def get_noise_filtered_signals(self, signals: List[Signal], 
+    def get_noise_filtered_signals(self, signals: List[Signal],
                                  lookback_window: int = 10) -> List[Signal]:
-        """Apply advanced noise filtering based on signal patterns"""
         if len(signals) < 2:
             return signals
             
@@ -212,15 +243,12 @@ class SignalQualityFilter:
 
 
 class IndicatorPerformanceTracker:
-    """Tracks and analyzes performance of individual indicators"""
-    
     def __init__(self, performance_file: str = "data/indicator_performance.json"):
         self.performance_file = performance_file
         self.performance_data: Dict[str, IndicatorPerformance] = {}
         self.load_performance_data()
         
     def load_performance_data(self):
-        """Load historical performance data from file"""
         if os.path.exists(self.performance_file):
             try:
                 with open(self.performance_file, 'r') as f:
@@ -240,7 +268,6 @@ class IndicatorPerformanceTracker:
                 logger.error(f"Error loading performance data: {e}")
                 
     def save_performance_data(self):
-        """Save performance data to file"""
         try:
             os.makedirs(os.path.dirname(self.performance_file), exist_ok=True)
             data = {}
@@ -260,9 +287,8 @@ class IndicatorPerformanceTracker:
         except Exception as e:
             logger.error(f"Error saving performance data: {e}")
             
-    def update_performance(self, indicator_name: str, signal_correct: bool, 
+    def update_performance(self, indicator_name: str, signal_correct: bool,
                          signal_return: float, market_regime: str = 'unknown'):
-        """Update performance metrics for an indicator"""
         if indicator_name not in self.performance_data:
             self.performance_data[indicator_name] = IndicatorPerformance(
                 indicator_name=indicator_name,
@@ -298,7 +324,6 @@ class IndicatorPerformanceTracker:
         self.save_performance_data()
         
     def get_indicator_weight(self, indicator_name: str, market_regime: str = 'unknown') -> float:
-        """Get dynamic weight for indicator based on performance"""
         if indicator_name not in self.performance_data:
             return 0.5  # Default weight for new indicators
             
@@ -320,8 +345,6 @@ class IndicatorPerformanceTracker:
 
 
 class MultiTimeframeAnalyzer:
-    """Enhanced multi-timeframe analysis with consistency scoring and cross-timeframe validation"""
-    
     def __init__(self, timeframes: List[str] = None):
         self.timeframes = timeframes or ['5m', '15m', '1H', '4H', '1D', '1W']
         self.consistency_threshold = 0.7
@@ -329,10 +352,9 @@ class MultiTimeframeAnalyzer:
             '5m': 0.1, '15m': 0.15, '1H': 0.2, '4H': 0.25, '1D': 0.2, '1W': 0.1
         }
         
-    def analyze_multi_timeframe(self, df: pd.DataFrame, 
-                              analysis_func, 
-                              symbol: str) -> Dict[str, Any]:
-        """Analyze signals across multiple timeframes with enhanced consistency scoring"""
+    def analyze_multi_timeframe(self, df: pd.DataFrame,
+                             analysis_func,
+                             symbol: str) -> Dict[str, Any]:
         timeframe_signals = {}
         consistency_scores = {}
         validation_results = {}
@@ -368,7 +390,6 @@ class MultiTimeframeAnalyzer:
         }
     
     def _resample_data(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
-        """Resample data to specified timeframe with comprehensive support"""
         agg_dict = {
             'Open': 'first',
             'High': 'max',
@@ -399,7 +420,6 @@ class MultiTimeframeAnalyzer:
             return df
             
     def _get_common_indicators(self, timeframe_signals: Dict[str, Dict]) -> List[str]:
-        """Get indicators that appear in all timeframes"""
         if not timeframe_signals:
             return []
             
@@ -409,9 +429,8 @@ class MultiTimeframeAnalyzer:
             
         return list(common_indicators)
     
-    def _calculate_consistency_score(self, indicator: str, 
-                                   timeframe_signals: Dict[str, Dict]) -> float:
-        """Calculate consistency score for an indicator across timeframes"""
+    def _calculate_consistency_score(self, indicator: str,
+                                  timeframe_signals: Dict[str, Dict]) -> float:
         signals = []
         for tf_signals in timeframe_signals.values():
             if indicator in tf_signals:
@@ -432,9 +451,8 @@ class MultiTimeframeAnalyzer:
         max_agreement = max(buy_count, sell_count, neutral_count)
         return max_agreement / len(signals)
     
-    def _calculate_enhanced_consistency_score(self, indicator: str, 
-                                            timeframe_signals: Dict[str, Dict]) -> float:
-        """Calculate enhanced consistency score with timeframe weighting and strength consideration"""
+    def _calculate_enhanced_consistency_score(self, indicator: str,
+                                           timeframe_signals: Dict[str, Dict]) -> float:
         weighted_signals = []
         total_weight = 0
         
@@ -483,7 +501,6 @@ class MultiTimeframeAnalyzer:
         return min(consistency_score, 1.0)
     
     def _categorize_timeframes(self, weighted_signals: List[Dict]) -> set:
-        """Categorize timeframes into short-term, medium-term, and long-term"""
         categories = set()
         for signal_data in weighted_signals:
             timeframe = signal_data['timeframe']
@@ -496,7 +513,6 @@ class MultiTimeframeAnalyzer:
         return categories
     
     def _cross_timeframe_validation(self, timeframe_signals: Dict[str, Dict]) -> Dict[str, Any]:
-        """Perform cross-timeframe signal validation"""
         validation_results = {
             'trend_alignment': {},
             'momentum_confirmation': {},
@@ -531,7 +547,6 @@ class MultiTimeframeAnalyzer:
         return validation_results
     
     def _validate_trend_alignment(self, timeframe_signals: Dict[str, Dict]) -> Dict[str, Any]:
-        """Validate trend alignment across timeframes"""
         trend_indicators = ['MACD', 'Ichimoku']  # Trend-following indicators
         alignment_score = 0.0
         aligned_signals = 0
@@ -568,7 +583,6 @@ class MultiTimeframeAnalyzer:
         }
     
     def _validate_momentum_confirmation(self, timeframe_signals: Dict[str, Dict]) -> Dict[str, Any]:
-        """Validate momentum confirmation across timeframes"""
         momentum_indicators = ['RSI', 'MACD']
         confirmation_score = 0.0
         confirmed_signals = 0
@@ -610,7 +624,6 @@ class MultiTimeframeAnalyzer:
         }
     
     def _validate_sr_confluence(self, timeframe_signals: Dict[str, Dict]) -> Dict[str, Any]:
-        """Validate support/resistance confluence across timeframes"""
         sr_score = 0.0
         
         # Check if support/resistance signals align across timeframes
@@ -636,7 +649,6 @@ class MultiTimeframeAnalyzer:
         }
     
     def _calculate_timeframe_strength(self, timeframe_signals: Dict[str, Dict]) -> Dict[str, float]:
-        """Calculate overall signal strength for each timeframe"""
         timeframe_strength = {}
         
         for timeframe, tf_signals in timeframe_signals.items():
@@ -657,7 +669,6 @@ class MultiTimeframeAnalyzer:
     
     def _generate_consensus_signals(self, timeframe_signals: Dict[str, Dict],
                                   consistency_scores: Dict[str, float]) -> Dict[str, Signal]:
-        """Generate consensus signals based on timeframe agreement"""
         consensus_signals = {}
         
         for indicator, consistency in consistency_scores.items():
@@ -1037,7 +1048,7 @@ class EnhancedTechnicalAnalysisEngine:
                         
         return diversity_weights
     
-    def calculate_adaptive_weights(self, signals: Dict[str, Signal], 
+    def calculate_adaptive_weights(self, signals: Dict[str, Signal],
                                  market_context: Dict[str, Any]) -> Dict[str, float]:
         """Calculate adaptive weights based on current signals and market context"""
         if not signals:
@@ -1054,8 +1065,10 @@ class EnhancedTechnicalAnalysisEngine:
         for indicator, signal in signals.items():
             base_weight = base_weights.get(indicator, 0.2)
             
-            # Adjust based on signal quality
+            # Adjust based on signal quality with lowered threshold
             quality_score = signal.metadata.get('quality_score', 0.5)
+            if quality_score < 0.1:
+                continue  # Skip low quality signals
             quality_adjustment = 0.5 + quality_score  # Range: 0.5 to 1.5
             
             # Adjust based on signal strength and confidence

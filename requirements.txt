@@ -363,7 +363,7 @@ greenlet==3.2.4 ; (python_full_version < '3.14' and platform_machine == 'AMD64')
     --hash=sha256:e37ab26028f12dbb0ff65f29a8d3d44a765c61e729647bf2ddfbbed621726f01 \
     --hash=sha256:f28588772bb5fb869a8eb331d6f73697d3b4c4816d090dd34ff937c20fa90e8ab
     # via sqlalchemy
-groq==0.4.1 \
+groq>=0.4.1 \
     --hash=sha256:4d611e0100cb22732c43b53af37933a1b8a5c5a18fa96132fee14e6c15d737e6 \
     --hash=sha256:536bd5dd6267dea5b3710e41094c0479748da2d155b9e073650e94b7fb2d71e8
     # via langchain-groq

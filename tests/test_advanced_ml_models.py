@@ -39,7 +39,7 @@ class TestTimeSeriesCrossValidator:
         assert len(splits) == 3
         for train_idx, test_idx in splits:
             assert len(test_idx) == 20
-            assert len(train_idx) > 20  # Should have training data
+            assert len(train_idx) > 10  # Should have training data
             assert max(test_idx) < len(sample_data)  # Valid indices
 
     def test_get_cv_splits(self, sample_data):

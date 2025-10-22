@@ -1,12 +1,3 @@
-"""
-Missing Data Handler for Stock Bot
-
-This module implements intelligent missing data handling including:
-- Intelligent interpolation methods for missing values
-- Data exclusion logic for poor quality data
-- Multiple interpolation strategies based on data characteristics
-- Quality assessment for interpolated data
-"""
 
 import logging
 import numpy as np
@@ -23,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 class InterpolationMethod(Enum):
-    """Available interpolation methods"""
     LINEAR = "linear"
     FORWARD_FILL = "forward_fill"
     BACKWARD_FILL = "backward_fill"
@@ -34,7 +24,6 @@ class InterpolationMethod(Enum):
 
 
 class DataQuality(Enum):
-    """Data quality levels after interpolation"""
     HIGH = "high"          # Original data, no interpolation
     GOOD = "good"          # Minor interpolation with high confidence
     FAIR = "fair"          # Moderate interpolation with medium confidence
@@ -44,7 +33,6 @@ class DataQuality(Enum):
 
 @dataclass
 class InterpolationResult:
-    """Result of missing data interpolation"""
     original_count: int
     missing_count: int
     interpolated_count: int
@@ -57,7 +45,6 @@ class InterpolationResult:
 
 @dataclass
 class ProcessedData:
-    """Data after missing value processing"""
     data: HistoricalData
     quality: DataQuality
     interpolation_result: InterpolationResult
@@ -65,10 +52,6 @@ class ProcessedData:
 
 
 class MissingDataHandler:
-    """
-    Intelligent missing data handler for stock market data
-    """
-    
     def __init__(self,
                  max_missing_ratio: float = 0.30,      # Max 30% missing data
                  max_consecutive_missing: int = 7,      # Max 7 consecutive missing days
@@ -81,16 +64,6 @@ class MissingDataHandler:
         self.exclude_threshold = exclude_threshold
     
     def handle_missing_data(self, data: HistoricalData, symbol: str) -> ProcessedData:
-        """
-        Process missing data using intelligent interpolation and exclusion
-        
-        Args:
-            data: Historical stock data with potential missing values
-            symbol: Stock symbol for logging and metadata
-            
-        Returns:
-            ProcessedData with handled missing values
-        """
         if not data:
             return ProcessedData(
                 data=[],
@@ -158,7 +131,6 @@ class MissingDataHandler:
         )
     
     def _convert_to_dataframe(self, data: HistoricalData) -> pd.DataFrame:
-        """Convert HistoricalData to pandas DataFrame"""
         df_data = []
         for record in data:
             df_data.append({
@@ -177,7 +149,6 @@ class MissingDataHandler:
         return df
     
     def _analyze_missing_patterns(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Analyze missing data patterns"""
         price_fields = ['open', 'high', 'low', 'close']
         
         analysis = {
@@ -217,7 +188,6 @@ class MissingDataHandler:
         return analysis
     
     def _max_consecutive_missing(self, missing_mask: pd.Series) -> int:
-        """Find maximum consecutive missing values"""
         if not missing_mask.any():
             return 0
         
@@ -228,7 +198,6 @@ class MissingDataHandler:
         return consecutive_counts.max() if len(consecutive_counts) > 0 else 0
     
     def _should_exclude_data(self, missing_analysis: Dict[str, Any]) -> bool:
-        """Determine if data should be excluded entirely"""
         # Exclude if too much data is missing overall
         if missing_analysis['missing_ratio'] > self.exclude_threshold:
             return True
@@ -246,9 +215,8 @@ class MissingDataHandler:
         
         return False
     
-    def _choose_interpolation_method(self, df: pd.DataFrame, 
+    def _choose_interpolation_method(self, df: pd.DataFrame,
                                    missing_analysis: Dict[str, Any]) -> InterpolationMethod:
-        """Choose the best interpolation method based on data characteristics"""
         missing_ratio = missing_analysis['missing_ratio']
         
         # If very little missing data, use linear interpolation
@@ -268,7 +236,6 @@ class MissingDataHandler:
     
     def _apply_interpolation(self, df: pd.DataFrame, method: InterpolationMethod,
                            missing_analysis: Dict[str, Any]) -> Tuple[pd.DataFrame, InterpolationResult]:
-        """Apply the chosen interpolation method"""
         original_df = df.copy()
         warnings_list = []
         
@@ -317,7 +284,6 @@ class MissingDataHandler:
         )
     
     def _apply_linear_interpolation(self, df: pd.DataFrame, warnings: List[str]) -> int:
-        """Apply linear interpolation"""
         interpolated_count = 0
         price_fields = ['open', 'high', 'low', 'close']
         
@@ -340,7 +306,6 @@ class MissingDataHandler:
         return interpolated_count
     
     def _apply_forward_fill(self, df: pd.DataFrame, warnings: List[str]) -> int:
-        """Apply forward fill interpolation"""
         interpolated_count = 0
         fields = ['open', 'high', 'low', 'close', 'volume']
         
@@ -361,7 +326,6 @@ class MissingDataHandler:
         return interpolated_count
     
     def _apply_backward_fill(self, df: pd.DataFrame, warnings: List[str]) -> int:
-        """Apply backward fill interpolation"""
         interpolated_count = 0
         fields = ['open', 'high', 'low', 'close', 'volume']
         
@@ -382,7 +346,6 @@ class MissingDataHandler:
         return interpolated_count
     
     def _apply_time_weighted_interpolation(self, df: pd.DataFrame, warnings: List[str]) -> int:
-        """Apply time-weighted interpolation"""
         interpolated_count = 0
         price_fields = ['open', 'high', 'low', 'close']
         
@@ -403,7 +366,6 @@ class MissingDataHandler:
         return interpolated_count
     
     def _apply_spline_interpolation(self, df: pd.DataFrame, warnings: List[str]) -> int:
-        """Apply spline interpolation (for smooth curves)"""
         interpolated_count = 0
         price_fields = ['open', 'high', 'low', 'close']
         
@@ -434,10 +396,9 @@ class MissingDataHandler:
         
         return interpolated_count
     
-    def _calculate_interpolation_quality(self, original_df: pd.DataFrame, 
-                                       interpolated_df: pd.DataFrame, 
+    def _calculate_interpolation_quality(self, original_df: pd.DataFrame,
+                                       interpolated_df: pd.DataFrame,
                                        interpolated_count: int) -> float:
-        """Calculate quality score for interpolated data"""
         if len(original_df) == 0:
             return 0.0
         
@@ -465,9 +426,8 @@ class MissingDataHandler:
         
         return max(0.0, quality)
     
-    def _calculate_interpolation_confidence(self, missing_analysis: Dict[str, Any], 
+    def _calculate_interpolation_confidence(self, missing_analysis: Dict[str, Any],
                                           method: InterpolationMethod) -> float:
-        """Calculate confidence in interpolation results"""
         base_confidence = {
             InterpolationMethod.LINEAR: 0.8,
             InterpolationMethod.TIME_WEIGHTED: 0.85,
@@ -491,7 +451,6 @@ class MissingDataHandler:
         return max(0.1, base_confidence - confidence_reduction)
     
     def _assess_data_quality(self, interpolation_result: InterpolationResult) -> DataQuality:
-        """Assess overall data quality after interpolation"""
         if interpolation_result.method_used == InterpolationMethod.EXCLUDE:
             return DataQuality.EXCLUDED
         

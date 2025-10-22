@@ -83,3 +83,13 @@ Thumbs.db
 # OS and Miscellaneous
 .DS_Store
 Thumbs.db
+# Sensitive Files
+secrets.txt
+cookies.txt
+*.key
+*.pem
+*.p12
+*.crt
+*.cer
+*.pfx
+*.jks

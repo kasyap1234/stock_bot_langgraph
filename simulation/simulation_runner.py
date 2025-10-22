@@ -14,7 +14,7 @@ SIMULATION_DAYS = 252
 TRADE_LIMIT = 100
 
 
-from config.config import WALK_FORWARD_ENABLED
+from config.trading_config import WALK_FORWARD_ENABLED
 from data.apis import get_stock_history
 from simulation.advanced_backtesting_engine import WalkForwardOptimizer
 from simulation.backtesting_engine import BacktestingEngine

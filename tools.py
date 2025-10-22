@@ -1,11 +1,12 @@
 import yfinance as yf
 import os
 import nltk
-from tavily import TavilyClient
+from ddgs import DDGS
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from data.models import State
 from agents import data_fetcher_agent, technical_analysis_agent, sentiment_analysis_agent
-from config.config import DEFAULT_STOCKS
+from config.constants import DEFAULT_STOCKS
+from data.scraper import scrape_news
 
 # Ensure NLTK VADER lexicon is available
 try:
@@ -46,12 +47,18 @@ def compute_technical_indicators(symbol: str, indicators: list = ["RSI", "MACD"]
     return {"symbol": symbol, "indicators": results}
 
 def web_search(query: str, max_results: int = 5) -> list[dict]:
-    api_key = os.getenv('TAVILY_API_KEY')
-    if not api_key:
-        return [{"error": "TAVILY_API_KEY not set"}]
-    client = TavilyClient(api_key=api_key)
-    results = client.search(query, search_depth='basic', max_results=max_results)
-    return results['results']
+    try:
+        results = DDGS().text(query, max_results=max_results)
+        formatted_results = []
+        for r in results:
+            formatted_results.append({
+                'title': r.get('title', ''),
+                'url': r.get('href', ''),
+                'content': r.get('body', '')
+            })
+        return formatted_results
+    except Exception as e:
+        return [{"error": str(e)}]
 
 def stock_search(query: str) -> list[str]:
     query_upper = query.upper()
@@ -64,18 +71,18 @@ def get_sentiment(symbol: str, use_web: bool = True) -> dict:
     if not symbol.endswith(".NS"):
         return {"error": "Only Indian stocks (.NS) are supported"}
     if use_web:
-        search_results = web_search(f"latest news on {symbol}")
-        if "error" in search_results:
-            return {"error": search_results["error"]}
+        news_items = scrape_news(symbol, max_articles=5)
+        if not news_items:
+            return {"error": "No news found for analysis"}
         sia = SentimentIntensityAnalyzer()
         polarities = []
         sources = []
-        for result in search_results:
-            content = result.get('content', '')
+        for item in news_items:
+            content = item.get('title', '') + ' ' + (item.get('summary', '') or '')
             if content:
                 polarity = sia.polarity_scores(content)['compound']
                 polarities.append(polarity)
-                sources.append(result.get('url', ''))
+                sources.append(item.get('url', ''))
         if polarities:
             avg_polarity = sum(polarities) / len(polarities)
             if avg_polarity > 0.05:

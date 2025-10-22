@@ -10,19 +10,18 @@ from datetime import datetime, timedelta
 
 from langgraph.graph import StateGraph, START, END
 
-from main import (
+from workflow import (
     build_workflow_graph,
     should_run_walk_forward_and_simulate,
     should_simulate,
-    run_analysis_and_simulation,
+    invoke_workflow,
     simulation_node,
     performance_node,
-    create_initial_state,
-    print_recommendations,
-    print_simulation_results
+    create_initial_state
 )
+from output import render_recommendations, render_simulation
 from data.models import State
-from config.config import DEFAULT_STOCKS
+from config.constants import DEFAULT_STOCKS
 from agents import (
     data_fetcher_agent,
     technical_analysis_agent,
@@ -86,16 +85,16 @@ def test_create_initial_state():
 
 
 class TestBuildWorkflowGraph:
-    
 
-    @patch('main.data_fetcher_agent')
-    @patch('main.technical_analysis_agent')
-    @patch('main.fundamental_analysis_agent')
-    @patch('main.sentiment_analysis_agent')
-    @patch('main.risk_assessment_agent')
-    @patch('main.final_recommendation_agent')
-    @patch('main.simulation_node')
-    @patch('main.performance_node')
+
+    @patch('workflow.data_fetcher_agent')
+    @patch('workflow.technical_analysis_agent')
+    @patch('workflow.fundamental_analysis_agent')
+    @patch('workflow.sentiment_analysis_agent')
+    @patch('workflow.risk_assessment_agent')
+    @patch('workflow.final_recommendation_agent')
+    @patch('workflow.simulation_node')
+    @patch('workflow.performance_node')
     def test_build_workflow_graph_structure(self, mock_perf, mock_sim, mock_final, mock_risk,
                                             mock_sent, mock_fund, mock_tech, mock_data):
         
@@ -161,8 +160,8 @@ class TestBuildWorkflowGraph:
         assert isinstance(default_graph, CompiledStateGraph)
 
     def test_build_workflow_graph_error(self):
-        
-        with patch('main.StateGraph.compile', side_effect=Exception("Compilation failed")):
+
+        with patch('workflow.StateGraph.compile', side_effect=Exception("Compilation failed")):
             with pytest.raises(ValueError, match="Workflow graph compilation failed"):
                 build_workflow_graph(SAMPLE_STOCKS)
 
@@ -171,15 +170,15 @@ class TestNodeFunctions:
     
 
     def test_simulation_node_happy_path(self, sample_state: State):
-        
-        with patch('main.run_trading_simulation', return_value=SAMPLE_SIM_INNER):
+
+        with patch('workflow.run_trading_simulation', return_value=SAMPLE_SIM_INNER):
             result = simulation_node(sample_state)
             assert result == {"simulation_results": SAMPLE_SIM_INNER}
 
     def test_simulation_node_error(self, sample_state: State, caplog):
-        
+
         with caplog.at_level(logging.ERROR):
-            with patch('main.run_trading_simulation', side_effect=Exception("Sim error")):
+            with patch('workflow.run_trading_simulation', side_effect=Exception("Sim error")):
                 result = simulation_node(sample_state)
                 assert result == {"simulation_results": {"error": "Sim error"}}
                 assert "SimulationActor failed: Sim error" in caplog.text
@@ -233,11 +232,11 @@ class TestShouldSimulate:
 
 
 class TestRunAnalysisAndSimulation:
-    
 
-    @patch('main.build_workflow_graph')
+
+    @patch('workflow.build_workflow_graph')
     def test_run_analysis_happy_path(self, mock_build, capsys):
-        
+
         # Mocks
         mock_graph = MagicMock()
         mock_build.return_value = mock_graph
@@ -248,26 +247,29 @@ class TestRunAnalysisAndSimulation:
             "performance_analysis": SAMPLE_PERF_INNER
         }
         mock_graph.invoke.return_value = final_state
-    
-        result = run_analysis_and_simulation(SAMPLE_STOCKS)
-    
+
+        result = invoke_workflow(SAMPLE_STOCKS)
+
         # Verify calls
         mock_build.assert_called_once_with(SAMPLE_STOCKS, period="5y")
         mock_graph.invoke.assert_called_once_with(create_initial_state())
 
-        # Verify output
+        # Verify output after rendering
+        render_recommendations(result)
+        render_simulation(result)
         captured = capsys.readouterr()
         assert "Top 10 Trading Recommendations" in captured.out
         assert "AAPL: BUY" in captured.out
+        assert "Portfolio Simulation Results" in captured.out
 
         # Verify return
-        assert result[0] == final_state
-        assert result[1] == SAMPLE_SIM_INNER
-        assert result[2] == SAMPLE_PERF_INNER
+        assert result == final_state
+        assert result["simulation_results"] == SAMPLE_SIM_INNER
+        assert result["performance_analysis"] == SAMPLE_PERF_INNER
 
-    @patch('main.build_workflow_graph')
+    @patch('workflow.build_workflow_graph')
     def test_run_analysis_no_simulation(self, mock_build, capsys):
-        
+
         mock_graph = MagicMock()
         mock_build.return_value = mock_graph
         final_state = {
@@ -276,32 +278,33 @@ class TestRunAnalysisAndSimulation:
         }
         mock_graph.invoke.return_value = final_state
 
-        result = run_analysis_and_simulation(SAMPLE_STOCKS)
+        result = invoke_workflow(SAMPLE_STOCKS)
 
+        render_recommendations(result)
         captured = capsys.readouterr()
         assert "AAPL: HOLD" in captured.out
-        assert result[1] is None
-        assert result[2] is None
+        assert result.get("simulation_results") is None
+        assert result.get("performance_analysis") is None
 
-    @patch('main.build_workflow_graph')
+    @patch('workflow.build_workflow_graph')
     def test_run_analysis_graph_error(self, mock_build):
-        
+
         mock_build.side_effect = ValueError("Graph error")
         with pytest.raises(RuntimeError, match="Trading analysis failed"):
-            run_analysis_and_simulation(SAMPLE_STOCKS)
+            invoke_workflow(SAMPLE_STOCKS)
 
-    @patch('main.build_workflow_graph')
+    @patch('workflow.build_workflow_graph')
     def test_run_analysis_empty_state(self, mock_build):
-        
+
         mock_graph = MagicMock()
         mock_build.return_value = mock_graph
         mock_graph.invoke.return_value = None
-        result = run_analysis_and_simulation(SAMPLE_STOCKS)
-        assert result == (None, None, None)
+        result = invoke_workflow(SAMPLE_STOCKS)
+        assert result is None
 
-    @patch('main.build_workflow_graph')
+    @patch('workflow.build_workflow_graph')
     def test_run_analysis_sim_error(self, mock_build, capsys):
-        
+
         mock_graph = MagicMock()
         mock_build.return_value = mock_graph
         final_state = {
@@ -311,34 +314,36 @@ class TestRunAnalysisAndSimulation:
         }
         mock_graph.invoke.return_value = final_state
 
-        result = run_analysis_and_simulation(SAMPLE_STOCKS)
+        result = invoke_workflow(SAMPLE_STOCKS)
 
+        render_recommendations(result)
+        render_simulation(result)
         captured = capsys.readouterr()
         assert "Simulation failed: Sim failed" in captured.out
-        assert result[1] == {"error": "Sim failed"}
+        assert result["simulation_results"] == {"error": "Sim failed"}
 
 
 class TestPrintFunctions:
-    
+
 
     def test_print_recommendations_happy(self, capsys):
-        
+
         sample_state = {"final_recommendation": {"AAPL": SAMPLE_RECOMMENDATION_BUY_INNER}}
-        print_recommendations(sample_state)
+        render_recommendations(sample_state)
         captured = capsys.readouterr()
-        assert "Top 10 Trading Recommendations" in captured.out
+        assert "Top 10 Trading Recommendations (ranked by confidence):" in captured.out
         assert "AAPL: BUY (Confidence: 0.8%)" in captured.out
         assert "Reasoning: Overall score" in captured.out
 
     def test_print_recommendations_empty(self, capsys):
-        
-        print_recommendations({"final_recommendation": {}})
+
+        render_recommendations({"final_recommendation": {}})
         captured = capsys.readouterr()
         assert "No recommendations generated." in captured.out
 
     def test_print_simulation_results_happy(self, capsys):
-        
-        print_simulation_results(SAMPLE_SIM_INNER, SAMPLE_PERF_INNER)
+
+        render_simulation({"simulation_results": SAMPLE_SIM_INNER, "performance_analysis": SAMPLE_PERF_INNER})
         captured = capsys.readouterr()
         assert "Portfolio Simulation Results" in captured.out
         assert "Final Portfolio Value: ₹1,100,000" in captured.out
@@ -346,14 +351,14 @@ class TestPrintFunctions:
         assert "Key Insights:" in captured.out
 
     def test_print_simulation_results_error(self, capsys):
-        
-        print_simulation_results({"error": "Sim error"}, {})
+
+        render_simulation({"simulation_results": {"error": "Sim error"}})
         captured = capsys.readouterr()
         assert "Simulation failed: Sim error" in captured.out
 
     def test_print_simulation_results_no_results(self, capsys):
-        
-        print_simulation_results({}, {})
+
+        render_simulation({})
         captured = capsys.readouterr()
         assert "Simulation failed: No results" in captured.out
 

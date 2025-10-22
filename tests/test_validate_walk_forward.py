@@ -10,7 +10,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
 # Now imports should work
-from config.config import WALK_FORWARD_ENABLED
+from config.trading_config import WALK_FORWARD_ENABLED
 from simulation.advanced_backtesting_engine import WalkForwardOptimizer
 from simulation.backtesting_engine import BacktestingEngine
 

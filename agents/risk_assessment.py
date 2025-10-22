@@ -13,7 +13,7 @@ except Exception:
     optimize = None
     logging.warning("SciPy optimize not available, using equal weights for portfolio")
 
-from config.config import (
+from config.trading_config import (
     RISK_TOLERANCE, MAX_POSITIONS, MAX_PORTFOLIO_DRAWDOWN, MAX_DAILY_LOSS,
     MAX_POSITION_SIZE_PCT, MAX_SECTOR_EXPOSURE, KELLY_FRACTION, RISK_FREE_RATE,
     ATR_PERIOD, TRAILING_STOP_PCT, TIME_EXIT_DAYS, PROFIT_TARGET_LEVELS

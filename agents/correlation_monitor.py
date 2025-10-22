@@ -1,17 +1,4 @@
-"""
-Dynamic Correlation Monitoring Module
-
-This module implements rolling correlation calculations and correlation regime detection
-as part of the advanced risk assessment system. It monitors how correlations between
-assets change over time and detects correlation regimes.
-
-Requirements addressed: 
-- 2.3 - Portfolio correlation considerations for risk management
-- 5.3 - Correlation pattern changes for regime detection
-"""
-
 import logging
-import warnings
 from typing import Dict, List, Optional, Tuple, Union, Any
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -25,21 +12,17 @@ from scipy.spatial.distance import squareform
 
 logger = logging.getLogger(__name__)
 
-# Suppress warnings for cleaner output
-warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 
 class CorrelationRegime(Enum):
-    """Correlation regime types"""
-    LOW_CORRELATION = "low_correlation"      # Correlations < 0.3
-    MODERATE_CORRELATION = "moderate_correlation"  # 0.3 <= correlations < 0.7
-    HIGH_CORRELATION = "high_correlation"    # Correlations >= 0.7
-    CRISIS_CORRELATION = "crisis_correlation"  # Extreme correlations > 0.9
+    LOW_CORRELATION = "low_correlation"
+    MODERATE_CORRELATION = "moderate_correlation"
+    HIGH_CORRELATION = "high_correlation"
+    CRISIS_CORRELATION = "crisis_correlation"
 
 
 @dataclass
 class CorrelationMetrics:
-    """Correlation analysis metrics"""
     correlation_matrix: np.ndarray
     average_correlation: float
     max_correlation: float
@@ -52,7 +35,6 @@ class CorrelationMetrics:
 
 @dataclass
 class CorrelationAlert:
-    """Correlation monitoring alert"""
     alert_type: str
     message: str
     severity: str  # 'low', 'medium', 'high', 'critical'
@@ -63,27 +45,11 @@ class CorrelationAlert:
 
 
 class DynamicCorrelationMonitor:
-    """
-    Dynamic correlation monitoring system for portfolio risk management.
-    
-    Monitors rolling correlations between assets and detects correlation regime changes
-    that could impact portfolio diversification and risk characteristics.
-    """
-    
-    def __init__(self, 
+    def __init__(self,
                  window_size: int = 60,
                  min_periods: int = 30,
                  regime_threshold: float = 0.15,
                  alert_thresholds: Dict[str, float] = None):
-        """
-        Initialize correlation monitor.
-        
-        Args:
-            window_size: Rolling window size for correlation calculation
-            min_periods: Minimum periods required for correlation calculation
-            regime_threshold: Threshold for detecting regime changes
-            alert_thresholds: Custom alert thresholds for different correlation levels
-        """
         self.window_size = window_size
         self.min_periods = min_periods
         self.regime_threshold = regime_threshold
@@ -101,19 +67,9 @@ class DynamicCorrelationMonitor:
         self.alerts: List[CorrelationAlert] = []
         self.asset_names: Optional[List[str]] = None
         
-    def calculate_rolling_correlations(self, 
+    def calculate_rolling_correlations(self,
                                      returns_data: pd.DataFrame,
                                      method: str = 'pearson') -> pd.DataFrame:
-        """
-        Calculate rolling correlations for multiple assets.
-        
-        Args:
-            returns_data: DataFrame with returns for multiple assets
-            method: Correlation method ('pearson', 'spearman', 'kendall')
-            
-        Returns:
-            DataFrame with rolling correlation matrices over time
-        """
         if returns_data.empty or len(returns_data.columns) < 2:
             raise ValueError("Need at least 2 assets for correlation calculation")
         
@@ -144,19 +100,9 @@ class DynamicCorrelationMonitor:
         
         return pd.DataFrame(rolling_corrs)
     
-    def analyze_correlation_regime(self, 
+    def analyze_correlation_regime(self,
                                  correlation_matrix: np.ndarray,
                                  asset_names: List[str] = None) -> CorrelationMetrics:
-        """
-        Analyze correlation regime from correlation matrix.
-        
-        Args:
-            correlation_matrix: Correlation matrix
-            asset_names: Names of assets (optional)
-            
-        Returns:
-            Correlation metrics and regime classification
-        """
         if asset_names is None:
             asset_names = self.asset_names or [f"Asset_{i}" for i in range(len(correlation_matrix))]
         
@@ -204,20 +150,10 @@ class DynamicCorrelationMonitor:
             regime_change_probability=regime_change_prob
         )
     
-    def monitor_correlations(self, 
+    def monitor_correlations(self,
                            returns_data: pd.DataFrame,
                            generate_alerts: bool = True) -> List[CorrelationMetrics]:
-        """
-        Monitor correlations over time and detect regime changes.
-        
-        Args:
-            returns_data: DataFrame with returns for multiple assets
-            generate_alerts: Whether to generate correlation alerts
-            
-        Returns:
-            List of correlation metrics over time
-        """
-        # Calculate rolling correlations
+        rolling_corr_data = self.calculate_rolling_correlations(returns_data)
         rolling_corr_data = self.calculate_rolling_correlations(returns_data)
         
         correlation_metrics = []

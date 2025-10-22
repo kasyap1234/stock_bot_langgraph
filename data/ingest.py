@@ -98,7 +98,6 @@ def clean_single_stock_record(stock_data: StockData) -> Optional[StockData]:
 
 
 def clean_symbol(symbol: str) -> str:
-    """Clean and validate stock symbol with logging."""
     
     if not isinstance(symbol, str):
         symbol = str(symbol)

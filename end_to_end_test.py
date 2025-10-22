@@ -1,4 +1,7 @@
 import logging
+import os
+import random
+from datetime import datetime, timedelta
 from data.apis import get_stock_history
 from data.ingest import clean_stock_data
 from data.models import HistoricalData
@@ -50,6 +53,8 @@ def calculate_macd(data: HistoricalData, fast: int = 12, slow: int = 26, signal:
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
 
 def run_end_to_end(symbol: str):
     logger.info(f"Running end-to-end test for {symbol}...")

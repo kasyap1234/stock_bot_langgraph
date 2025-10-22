@@ -711,6 +711,228 @@ class BayesianConfidenceEstimator:
         logger.debug(f"Updated prior probabilities: {self.prior_probabilities}")
 
 
+class StackingEnsemble:
+    """Stacking ensemble that uses a meta-learner to combine base signal predictions"""
+    
+    def __init__(self):
+        # In a full implementation, this would be a trained model
+        # For now, we'll use a simple weighted average with learned weights
+        self.meta_weights = {
+            SignalType.TECHNICAL: 0.25,
+            SignalType.FUNDAMENTAL: 0.15,
+            SignalType.SENTIMENT: 0.20,
+            SignalType.RISK: 0.15,
+            SignalType.MACRO: 0.10,
+            SignalType.MONTE_CARLO: 0.05,
+            SignalType.BACKTEST: 0.10
+        }
+    
+    def predict(self, signals: List[Signal], market_context: MarketContext) -> float:
+        """Generate prediction using stacking ensemble"""
+        # Group signals by type
+        signals_by_type = {}
+        for signal in signals:
+            if signal.signal_type not in signals_by_type:
+                signals_by_type[signal.signal_type] = []
+            signals_by_type[signal.signal_type].append(signal)
+        
+        # Calculate average strength for each type
+        type_strengths = {}
+        for signal_type, type_signals in signals_by_type.items():
+            avg_strength = np.mean([s.strength for s in type_signals])
+            type_strengths[signal_type] = avg_strength
+        
+        # Apply meta-learner weights
+        stacked_strength = 0.0
+        for signal_type, strength in type_strengths.items():
+            weight = self.meta_weights.get(signal_type, 0.0)
+            stacked_strength += strength * weight
+        
+        # Adjust based on market context
+        stacked_strength = self._apply_context_adjustment(stacked_strength, market_context)
+        
+        return stacked_strength
+    
+    def _apply_context_adjustment(self, strength: float, market_context: MarketContext) -> float:
+        """Apply market context-based adjustments to stacked prediction"""
+        # Adjust based on volatility regime
+        if market_context.volatility_regime == "high":
+            # Reduce signal strength in high volatility
+            strength *= 0.8
+        elif market_context.volatility_regime == "low":
+            # Slightly increase signal strength in low volatility
+            strength *= 1.1
+        
+        # Adjust based on trend regime
+        if market_context.trend_regime == "trending":
+            # Increase signal strength in trending markets
+            strength *= 1.1
+        elif market_context.trend_regime == "ranging":
+            # Reduce signal strength in ranging markets
+            strength *= 0.9
+        
+        return np.clip(strength, -1.0, 1.0)
+
+
+class BoostingEnsemble:
+    """Boosting ensemble that sequentially trains weak learners to correct errors"""
+    
+    def __init__(self):
+        # For simplicity, we'll simulate boosting with weighted voting
+        # where weights are based on signal confidence and context
+        self.n_boosting_rounds = 3
+        self.learning_rate = 0.1
+    
+    def predict(self, signals: List[Signal], market_context: MarketContext) -> float:
+        """Generate prediction using boosting ensemble"""
+        # Initialize prediction
+        prediction = 0.0
+        
+        # Simulate boosting rounds
+        for i in range(self.n_boosting_rounds):
+            # Calculate weighted prediction for this round
+            round_prediction = self._calculate_boosting_round(signals, market_context, i)
+            
+            # Apply learning rate
+            prediction += self.learning_rate * round_prediction
+        
+        return np.clip(prediction, -1.0, 1.0)
+    
+    def _calculate_boosting_round(self, signals: List[Signal], market_context: MarketContext, round_num: int) -> float:
+        """Calculate prediction for a single boosting round"""
+        # In a real boosting implementation, this would train a weak learner
+        # For now, we'll use a simple weighted average with context adjustments
+        total_weighted_strength = 0.0
+        total_weight = 0.0
+        
+        for signal in signals:
+            # Calculate weight based on confidence and context
+            base_weight = signal.confidence
+            context_weight = self._get_context_weight(signal, market_context, round_num)
+            final_weight = base_weight * context_weight
+            
+            total_weighted_strength += signal.strength * final_weight
+            total_weight += final_weight
+        
+        if total_weight > 0:
+            return total_weighted_strength / total_weight
+        else:
+            return 0.0
+    
+    def _get_context_weight(self, signal: Signal, market_context: MarketContext, round_num: int) -> float:
+        """Calculate context-based weight for a signal in a boosting round"""
+        weight = 1.0
+        
+        # Adjust based on signal type and market context
+        if market_context.volatility_regime == "high":
+            if signal.signal_type in [SignalType.RISK, SignalType.MONTE_CARLO]:
+                weight *= 1.3  # Increase risk signal importance
+            elif signal.signal_type == SignalType.TECHNICAL:
+                weight *= 0.8  # Reduce technical signal importance
+        elif market_context.volatility_regime == "low":
+            if signal.signal_type == SignalType.TECHNICAL:
+                weight *= 1.2  # Increase technical signal importance
+        
+        # Adjust based on trend regime
+        if market_context.trend_regime == "trending":
+            if signal.signal_type == SignalType.TECHNICAL:
+                weight *= 1.1  # Favor technical in trending markets
+        elif market_context.trend_regime == "ranging":
+            if signal.signal_type in [SignalType.FUNDAMENTAL, SignalType.SENTIMENT]:
+                weight *= 1.1  # Favor fundamental/sentiment in ranging markets
+        
+        # Adjust based on round number (e.g., focus on different aspects)
+        if round_num == 0:
+            # First round: focus on strong signals
+            if abs(signal.strength) > 0.5:
+                weight *= 1.2
+        elif round_num == 1:
+            # Second round: focus on medium signals
+            if 0.2 <= abs(signal.strength) <= 0.5:
+                weight *= 1.2
+        elif round_num == 2:
+            # Third round: focus on weak signals to correct errors
+            if abs(signal.strength) < 0.2:
+                weight *= 1.2
+        
+        return weight
+
+
+class DynamicWeighter:
+    """Dynamically adjusts signal weights based on market conditions and performance"""
+    
+    def __init__(self):
+        # Historical performance tracking for each signal source
+        self.performance_history = {}
+        self.decay_factor = 0.95  # How much to decay old performance scores
+    
+    def adjust_weights(self, original_weights: Dict[str, float], market_context: MarketContext) -> Dict[str, float]:
+        """Adjust signal weights based on market context and historical performance"""
+        adjusted_weights = {}
+        
+        for source, weight in original_weights.items():
+            # Get performance adjustment for this source
+            perf_adjustment = self._get_performance_adjustment(source)
+            
+            # Get context adjustment
+            context_adjustment = self._get_context_adjustment(source, market_context)
+            
+            # Apply adjustments
+            adjusted_weight = weight * perf_adjustment * context_adjustment
+            adjusted_weights[source] = adjusted_weight
+        
+        # Normalize weights to sum to 1
+        total_weight = sum(adjusted_weights.values())
+        if total_weight > 0:
+            adjusted_weights = {k: v / total_weight for k, v in adjusted_weights.items()}
+        
+        return adjusted_weights
+    
+    def _get_performance_adjustment(self, source: str) -> float:
+        """Get weight adjustment based on historical performance of the signal source"""
+        # Get historical accuracy for this source
+        historical_accuracy = self.performance_history.get(source, 0.5)  # Default to 50%
+        
+        # Map accuracy to adjustment factor
+        # If accuracy > 50%, increase weight; if < 50%, decrease weight
+        adjustment = 0.5 + historical_accuracy  # Range: 0.5 to 1.5
+        
+        return adjustment
+    
+    def _get_context_adjustment(self, source: str, market_context: MarketContext) -> float:
+        """Get weight adjustment based on market context"""
+        adjustment = 1.0
+        
+        # Example: adjust based on signal type (extracted from source name)
+        # In a real implementation, this would be more sophisticated
+        if 'tech' in source.lower() or any(t in source.lower() for t in ['rsi', 'macd', 'sma', 'ema']):
+            # Technical signals
+            if market_context.volatility_regime == "high":
+                adjustment *= 0.8  # Reduce weight in high volatility
+            elif market_context.volatility_regime == "low":
+                adjustment *= 1.1  # Increase weight in low volatility
+            
+            if market_context.trend_regime == "trending":
+                adjustment *= 1.1  # Increase weight in trending markets
+        elif 'sentiment' in source.lower() or 'news' in source.lower():
+            # Sentiment signals
+            if market_context.market_sentiment in ["bullish", "bearish"]:
+                adjustment *= 1.1  # Increase weight in extreme sentiment
+            elif market_context.correlation_regime == "high":
+                adjustment *= 0.9  # Reduce weight in high correlation (herding)
+        
+        return adjustment
+    
+    def update_performance(self, source: str, accuracy: float):
+        """Update historical performance for a signal source"""
+        if source in self.performance_history:
+            # Apply decay to old performance and add new performance
+            old_perf = self.performance_history[source]
+            self.performance_history[source] = self.decay_factor * old_perf + (1 - self.decay_factor) * accuracy
+        else:
+            self.performance_history[source] = accuracy
+
+
 class IntelligentEnsembleEngine:
     """Main ensemble engine that combines all components"""
     
@@ -718,8 +940,12 @@ class IntelligentEnsembleEngine:
         self.signal_combiner = AdaptiveSignalCombiner()
         self.conflict_resolver = SignalConflictResolver()
         self.confidence_estimator = BayesianConfidenceEstimator()
+        # Add new components for advanced ensembling
+        self.stacking_ensemble = StackingEnsemble()
+        self.boosting_ensemble = BoostingEnsemble()
+        self.dynamic_weighter = DynamicWeighter()
         
-    def generate_ensemble_recommendation(self, signals: List[Signal], 
+    def generate_ensemble_recommendation(self, signals: List[Signal],
                                        market_context: MarketContext) -> Recommendation:
         """Generate final recommendation using intelligent ensemble methods"""
         
@@ -733,8 +959,8 @@ class IntelligentEnsembleEngine:
             # Step 2: Calculate dynamic weights
             weights = self.signal_combiner.calculate_dynamic_weights(resolved_signals, market_context)
             
-            # Step 3: Combine signals using weights
-            composite_strength = self._calculate_weighted_composite(resolved_signals, weights)
+            # NEW: Apply advanced ensemble methods
+            composite_strength = self._apply_advanced_ensemble_methods(resolved_signals, weights, market_context)
             
             # Step 4: Estimate confidence and probabilities
             confidence, probabilities = self.confidence_estimator.estimate_confidence(
@@ -770,6 +996,32 @@ class IntelligentEnsembleEngine:
         except Exception as e:
             logger.error(f"Error generating ensemble recommendation: {e}")
             return self._generate_default_recommendation(f"Error in ensemble processing: {str(e)}")
+    
+    def _apply_advanced_ensemble_methods(self, signals: List[Signal], weights: Dict[str, float],
+                                       market_context: MarketContext) -> float:
+        """Apply advanced ensemble methods like stacking, boosting, and dynamic weighting"""
+        
+        # Calculate base weighted composite
+        base_composite = self._calculate_weighted_composite(signals, weights)
+        
+        # Apply stacking ensemble
+        stacking_contribution = self.stacking_ensemble.predict(signals, market_context)
+        
+        # Apply boosting ensemble
+        boosting_contribution = self.boosting_ensemble.predict(signals, market_context)
+        
+        # Apply dynamic weighting based on market context
+        dynamic_composite = self.dynamic_weighter.adjust_weights(weights, market_context)
+        dynamic_contribution = self._calculate_weighted_composite(signals, dynamic_composite)
+        
+        # Combine contributions using learned weights
+        # For now, use equal weights; in a full implementation, these would be learned
+        final_composite = (0.4 * base_composite +
+                          0.2 * stacking_contribution +
+                          0.2 * boosting_contribution +
+                          0.2 * dynamic_contribution)
+        
+        return final_composite
     
     def _resolve_signal_conflicts(self, signals: List[Signal]) -> List[Signal]:
         """Resolve conflicts within signal groups"""

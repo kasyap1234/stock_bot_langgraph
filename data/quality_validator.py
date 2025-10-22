@@ -23,16 +23,13 @@ from .models import StockData, HistoricalData, validate_stock_data
 logger = logging.getLogger(__name__)
 
 class InsufficientDataError(Exception):
-    """Raised when there is insufficient historical data for analysis."""
     pass
 
 class ConstantPriceError(Exception):
-    """Raised when prices are constant (zero standard deviation)."""
     pass
 
 
 class DataQualityIssue(Enum):
-    """Types of data quality issues that can be detected"""
     MISSING_DATA = "missing_data"
     PRICE_ANOMALY = "price_anomaly"
     VOLUME_ANOMALY = "volume_anomaly"
@@ -49,7 +46,6 @@ class DataQualityIssue(Enum):
 
 @dataclass
 class QualityIssue:
-    """Represents a data quality issue"""
     issue_type: DataQualityIssue
     severity: str  # 'low', 'medium', 'high', 'critical'
     description: str
@@ -60,7 +56,6 @@ class QualityIssue:
 
 @dataclass
 class DataQualityReport:
-    """Comprehensive data quality assessment report"""
     symbol: str
     total_records: int
     valid_records: int
@@ -147,7 +142,6 @@ class DataQualityValidator:
         )
     
     def _convert_to_dataframe(self, data: HistoricalData) -> pd.DataFrame:
-        """Convert HistoricalData to pandas DataFrame for analysis"""
         df_data = []
         for i, record in enumerate(data):
             df_data.append({
@@ -167,7 +161,6 @@ class DataQualityValidator:
         return df
     
     def _check_basic_data_integrity(self, df: pd.DataFrame) -> List[QualityIssue]:
-        """Check for basic data integrity issues"""
         issues = []
         
         # Check for missing required fields
@@ -218,7 +211,6 @@ class DataQualityValidator:
         return issues
     
     def _check_price_anomalies(self, df: pd.DataFrame) -> List[QualityIssue]:
-        """Detect price anomalies using statistical methods"""
         issues = []
         
         if len(df) < 2:
@@ -265,7 +257,6 @@ class DataQualityValidator:
         return issues
     
     def _check_volume_anomalies(self, df: pd.DataFrame) -> List[QualityIssue]:
-        """Detect volume anomalies"""
         issues = []
         
         if len(df) < 5:  # Need sufficient data for volume analysis
@@ -294,7 +285,6 @@ class DataQualityValidator:
         return issues
     
     def _check_ohlc_consistency(self, df: pd.DataFrame) -> List[QualityIssue]:
-        """Check OHLC price consistency"""
         issues = []
         
         # Check if high >= max(open, close) and low <= min(open, close)
@@ -326,7 +316,6 @@ class DataQualityValidator:
         return issues
     
     def _check_duplicates(self, df: pd.DataFrame) -> List[QualityIssue]:
-        """Check for duplicate records"""
         issues = []
         
         # Check for duplicate dates
@@ -345,7 +334,6 @@ class DataQualityValidator:
         return issues
     
     def _check_data_gaps(self, df: pd.DataFrame) -> List[QualityIssue]:
-        """Check for gaps in data (missing trading days)"""
         issues = []
         
         if len(df) < 2:
@@ -371,7 +359,6 @@ class DataQualityValidator:
         return issues
     
     def _check_stale_data(self, df: pd.DataFrame) -> List[QualityIssue]:
-        """Check if data is stale (too old)"""
         issues = []
         
         if df.empty:
@@ -393,7 +380,6 @@ class DataQualityValidator:
         return issues
     
     def _detect_corporate_actions(self, df: pd.DataFrame) -> List[QualityIssue]:
-        """Detect potential corporate actions (splits, dividends)"""
         issues = []
         
         if len(df) < 2:
@@ -435,7 +421,6 @@ class DataQualityValidator:
         return issues
     
     def _calculate_quality_score(self, df: pd.DataFrame, issues: List[QualityIssue]) -> float:
-        """Calculate overall data quality score (0.0 to 1.0)"""
         if df.empty:
             return 0.0
         
@@ -459,7 +444,6 @@ class DataQualityValidator:
         return max(0.0, score)
     
     def _generate_recommendations(self, issues: List[QualityIssue]) -> List[str]:
-        """Generate actionable recommendations based on detected issues"""
         recommendations = []
         
         # Group issues by type for consolidated recommendations

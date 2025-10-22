@@ -8,7 +8,7 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 
-from config.config import RISK_TOLERANCE
+from config.trading_config import RISK_TOLERANCE
 from data.models import State
 
 logger = logging.getLogger(__name__)

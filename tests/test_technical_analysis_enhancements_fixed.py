@@ -16,8 +16,11 @@ from agents.technical_analysis import (
     technical_analysis_agent, TradingSetup
 )
 from data.models import State
-from config.config import (
-    RSI_OVERBOUGHT, RSI_OVERSOLD, CONFIRMATION_THRESHOLD,
+from config.constants import (
+    RSI_OVERBOUGHT, RSI_OVERSOLD
+)
+from config.trading_config import (
+    CONFIRMATION_THRESHOLD,
     ENSEMBLE_THRESHOLD, TREND_STRENGTH_THRESHOLD,
     PROBABILITY_THRESHOLD, BACKTEST_VALIDATION_THRESHOLD
 )

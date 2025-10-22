@@ -14,7 +14,7 @@ from newsapi import NewsApiClient
 from fredapi import Fred
 from bs4 import BeautifulSoup
 
-from config.config import (
+from config.api_config import (
     ALPHA_VANTAGE_API_KEY, NEWS_API_KEY, FRED_API_KEY,
     API_RATE_LIMIT_DELAY, REQUEST_TIMEOUT
 )

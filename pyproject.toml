@@ -40,6 +40,7 @@ dependencies = [
     "optuna>=4.5.0",
     "pydantic-settings>=2.10.1",
     "psutil>=7.1.0",
+    "ddgs",
 ]
 
 [tool.pytest.ini_options]

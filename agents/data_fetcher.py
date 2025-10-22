@@ -2,44 +2,21 @@
 
 import logging
 import asyncio
-from functools import lru_cache
 from typing import Dict, List, Optional
 import pandas as pd
 import numpy as np
 import concurrent.futures
+import os
+import json
+from datetime import datetime, timedelta
 
-from config.config import DEFAULT_STOCKS, MAX_WORKERS, REAL_TIME_MAX_UPDATES
+from config.constants import DEFAULT_STOCKS, MAX_WORKERS, REAL_TIME_MAX_UPDATES
 from data.models import State
 from data.real_time_data import real_time_manager
 
 logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=128)
-def _get_stock_data(symbol: str, period: str = "5y") -> pd.DataFrame:
-    
-    try:
-        from yahooquery import Ticker
-        ticker = Ticker(symbol)
-        data = ticker.history(period=period)
-
-        if data.empty:
-            raise Exception("No data from API")
-
-        # Handle MultiIndex if present (e.g., when yahooquery returns tuples in index)
-        if isinstance(data.index, pd.MultiIndex):
-            data = data.reset_index()
-            data.set_index('date', inplace=True)
-
-        # Convert to UTC and make tz-naive to avoid timezone mismatch errors
-        data.index = pd.to_datetime(data.index, utc=True).tz_localize(None)
-        data = data.sort_index()  # Sort by date to ensure proper indexing
-
-        logger.info(f"Fetched real data for {symbol}: {len(data)} rows")
-        return data
-    except Exception as e:
-        logger.error(f"Failed to fetch real data for {symbol}: {e}")
-        raise  # Raise to prevent fallback; handle in caller if needed
 
 
 def data_fetcher_agent(state: State, symbols: List[str] = None, period: str = "5y", real_time: bool = False,
@@ -93,22 +70,18 @@ def data_fetcher_agent(state: State, symbols: List[str] = None, period: str = "5
     stock_data = {}
     failed_stocks = []
 
-    # Use ThreadPoolExecutor for parallel data fetching
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(symbols), MAX_WORKERS)) as executor:
-        # Submit all fetch tasks
-        future_to_symbol = {executor.submit(_get_stock_data, symbol, period): symbol for symbol in symbols}
+    from data.apis import UnifiedDataFetcher
+    fetcher = UnifiedDataFetcher(symbols[0] if symbols else "") # Initialize with a dummy symbol
+    batch_results = fetcher.get_batch_historical_data(symbols, period)
 
-        # Collect results as they complete
-        for future in concurrent.futures.as_completed(future_to_symbol):
-            symbol = future_to_symbol[future]
-            try:
-                df = future.result()
-                stock_data[symbol] = df
-                logger.info(f"Successfully fetched {len(df)} rows for {symbol}")
-            except Exception as e:
-                logger.error(f"Failed to fetch data for {symbol}: {e}")
-                failed_stocks.append({"symbol": symbol, "error": str(e)})
-                continue
+    for symbol, data in batch_results.items():
+        if data:
+            stock_data[symbol] = data
+            logger.info(f"Successfully fetched {len(data)} rows for {symbol}")
+        else:
+            logger.error(f"Failed to fetch data for {symbol}")
+            failed_stocks.append({"symbol": symbol, "error": "Failed to fetch data"})
+
 
     # Log summary of fetch results
     successful_count = len(stock_data)

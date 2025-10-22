@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 
 try:
+    import warnings
+    warnings.filterwarnings("ignore", category=FutureWarning, module="tensorflow")
     import tensorflow as tf
     from tensorflow.keras.models import Sequential, Model
     from tensorflow.keras.layers import (
@@ -36,24 +38,23 @@ except ImportError:
     logging.warning("PyTorch not available")
     PYTORCH_AVAILABLE = False
 
-from config.config import LSTM_EPOCHS, LSTM_BATCH, MODEL_DIR
+from config.ml_config import LSTM_EPOCHS, LSTM_BATCH
+from config.constants import MODEL_DIR
 from data.models import State
 
 logger = logging.getLogger(__name__)
 
+if PYTORCH_AVAILABLE:
+    class TimeSeriesDataset(Dataset):
+        def __init__(self, X: np.ndarray, y: np.ndarray):
+            self.X = torch.FloatTensor(X)
+            self.y = torch.LongTensor(y)
 
-class TimeSeriesDataset(Dataset):
-    
+        def __len__(self):
+            return len(self.X)
 
-    def __init__(self, X: np.ndarray, y: np.ndarray):
-        self.X = torch.FloatTensor(X)
-        self.y = torch.LongTensor(y)
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
+        def __getitem__(self, idx):
+            return self.X[idx], self.y[idx]
 
 
 class CNNTimeSeriesPredictor:
@@ -704,9 +705,6 @@ def neural_network_agent(state: State) -> State:
                 'training_results': training_results,
                 'predictions': prediction_results
             }
-
-            # Save models
-            nn_ensemble.save_models(symbol)
 
             logger.info(f"Completed neural network training and prediction for {symbol}")
 

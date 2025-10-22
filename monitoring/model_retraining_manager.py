@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 
 class RetrainingTrigger(Enum):
-    """Types of retraining triggers"""
     PERFORMANCE_DECLINE = "performance_decline"
     MODEL_DRIFT = "model_drift"
     DATA_DISTRIBUTION_CHANGE = "data_distribution_change"
@@ -40,7 +39,6 @@ class RetrainingTrigger(Enum):
 
 
 class RetrainingStatus(Enum):
-    """Status of retraining process"""
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -50,7 +48,6 @@ class RetrainingStatus(Enum):
 
 @dataclass
 class RetrainingRequest:
-    """Represents a model retraining request"""
     request_id: str
     model_name: str
     trigger_type: RetrainingTrigger
@@ -67,7 +64,6 @@ class RetrainingRequest:
 
 @dataclass
 class ModelConfiguration:
-    """Configuration for a trainable model"""
     model_name: str
     model_class: str  # Class name or module path
     training_function: Callable
@@ -83,7 +79,6 @@ class ModelConfiguration:
 
 @dataclass
 class RetrainingResult:
-    """Result of model retraining"""
     request_id: str
     model_name: str
     success: bool
@@ -133,7 +128,6 @@ class ModelRetrainingManager:
         self.performance_monitor = None
         
     def register_model(self, config: ModelConfiguration) -> None:
-        """Register a model for automatic retraining"""
         try:
             self.model_configurations[config.model_name] = config
             logger.info(f"Registered model for retraining: {config.model_name}")
@@ -142,14 +136,12 @@ class ModelRetrainingManager:
             logger.error(f"Error registering model {config.model_name}: {e}")
     
     def set_performance_monitor(self, performance_monitor) -> None:
-        """Set the performance monitor for integration"""
         self.performance_monitor = performance_monitor
         if performance_monitor:
             # Add callback to performance monitor for automatic triggers
             performance_monitor.add_callback(self._handle_performance_event)
     
     def start_manager(self) -> None:
-        """Start the retraining manager"""
         if self.manager_active:
             logger.warning("Retraining manager is already active")
             return
@@ -160,7 +152,6 @@ class ModelRetrainingManager:
         logger.info("Started model retraining manager")
     
     def stop_manager(self) -> None:
-        """Stop the retraining manager"""
         self.manager_active = False
         if self.manager_thread:
             self.manager_thread.join(timeout=10)
@@ -174,7 +165,6 @@ class ModelRetrainingManager:
         logger.info("Stopped model retraining manager")
     
     def _manager_loop(self) -> None:
-        """Main manager loop"""
         while self.manager_active:
             try:
                 # Process retraining queue
@@ -194,7 +184,6 @@ class ModelRetrainingManager:
                 time.sleep(60)
     
     def _handle_performance_event(self, event_type: str, event_data: Dict[str, Any]) -> None:
-        """Handle performance monitoring events"""
         try:
             if event_type == 'retraining':
                 # Performance monitor triggered retraining
@@ -283,7 +272,6 @@ class ModelRetrainingManager:
             return ""
     
     def _process_retraining_queue(self) -> None:
-        """Process pending retraining requests"""
         try:
             # Check if we can start new retraining
             if len(self.active_retraining) >= self.max_concurrent_retraining:
@@ -308,7 +296,6 @@ class ModelRetrainingManager:
             logger.error(f"Error processing retraining queue: {e}")
     
     def _start_retraining(self, request: RetrainingRequest) -> None:
-        """Start model retraining"""
         try:
             request.status = RetrainingStatus.IN_PROGRESS
             self.active_retraining[request.request_id] = request
@@ -333,7 +320,6 @@ class ModelRetrainingManager:
             request.error_message = str(e)
     
     def _execute_retraining(self, request: RetrainingRequest) -> RetrainingResult:
-        """Execute model retraining"""
         start_time = datetime.now()
         
         try:
@@ -424,7 +410,6 @@ class ModelRetrainingManager:
             )
     
     def _backup_current_model(self, model_name: str) -> Optional[str]:
-        """Create backup of current model"""
         try:
             model_path = self.model_storage_path / f"{model_name}.pkl"
             if not model_path.exists():
@@ -445,7 +430,6 @@ class ModelRetrainingManager:
             return None
     
     def _restore_model_backup(self, model_name: str, backup_path: str) -> bool:
-        """Restore model from backup"""
         try:
             model_path = self.model_storage_path / f"{model_name}.pkl"
             
@@ -460,7 +444,6 @@ class ModelRetrainingManager:
             return False
     
     def _get_current_performance(self, model_name: str) -> Optional[float]:
-        """Get current model performance"""
         try:
             if self.performance_monitor:
                 # Get performance from performance monitor
@@ -477,7 +460,6 @@ class ModelRetrainingManager:
             return None
     
     def _get_last_retraining_time(self, model_name: str) -> Optional[datetime]:
-        """Get the last retraining time for a model"""
         try:
             # Find most recent successful retraining
             model_results = [r for r in self.retraining_history 
@@ -496,7 +478,6 @@ class ModelRetrainingManager:
             return None
     
     def _check_scheduled_retraining(self) -> None:
-        """Check for scheduled retraining"""
         try:
             current_time = datetime.now()
             
@@ -537,7 +518,6 @@ class ModelRetrainingManager:
             logger.error(f"Error checking scheduled retraining: {e}")
     
     def _cleanup_completed_retraining(self) -> None:
-        """Clean up completed retraining tasks"""
         try:
             completed_requests = []
             
@@ -590,7 +570,6 @@ class ModelRetrainingManager:
             logger.error(f"Error cleaning up completed retraining: {e}")
     
     def _notify_callbacks(self, event_type: str, event_data: Dict[str, Any]) -> None:
-        """Notify callbacks of retraining events"""
         for callback in self.callbacks:
             try:
                 callback(event_type, event_data)
@@ -598,16 +577,13 @@ class ModelRetrainingManager:
                 logger.error(f"Callback error: {e}")
     
     def add_callback(self, callback: Callable) -> None:
-        """Add callback for retraining events"""
         self.callbacks.append(callback)
     
     def remove_callback(self, callback: Callable) -> None:
-        """Remove callback"""
         if callback in self.callbacks:
             self.callbacks.remove(callback)
     
     def get_retraining_status(self, model_name: Optional[str] = None) -> Dict[str, Any]:
-        """Get retraining status for models"""
         try:
             if model_name:
                 # Status for specific model
@@ -636,7 +612,6 @@ class ModelRetrainingManager:
             return {'error': str(e)}
     
     def cancel_retraining(self, request_id: str) -> bool:
-        """Cancel a retraining request"""
         try:
             # Check if in queue
             for i, request in enumerate(self.retraining_queue):

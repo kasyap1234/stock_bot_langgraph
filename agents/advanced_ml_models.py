@@ -45,6 +45,8 @@ except ImportError:
     OPTUNA_AVAILABLE = False
 
 try:
+    import warnings
+    warnings.filterwarnings("ignore", category=FutureWarning, module="tensorflow")
     from tensorflow.keras.models import Sequential
     from tensorflow.keras.layers import Dense, Dropout
     TENSORFLOW_AVAILABLE = True
@@ -52,35 +54,104 @@ except ImportError:
     logging.warning("TensorFlow not available")
     TENSORFLOW_AVAILABLE = False
 
-from config.config import MODEL_DIR
+from config.constants import MODEL_DIR
 from data.models import State
 
 logger = logging.getLogger(__name__)
 
 
 class TimeSeriesCrossValidator:
-    
 
-    def __init__(self, n_splits: int = 5, test_size: int = 30, gap: int = 1):
+
+    def __init__(self, n_splits: int = 5, test_size: int = 30, gap: int = 1,
+                 validation_type: str = 'expanding', min_train_size: int = 50,
+                 purge_window: int = 0, embargo_window: int = 0):
+        """
+        Enhanced Time Series Cross-Validator
+
+        Args:
+            n_splits: Number of CV splits
+            test_size: Size of test set (in samples)
+            gap: Gap between train and test sets
+            validation_type: 'expanding' or 'rolling'
+            min_train_size: Minimum training samples required
+            purge_window: Samples to purge around test period to prevent leakage
+            embargo_window: Samples to embargo after test period
+        """
         self.n_splits = n_splits
         self.test_size = test_size
         self.gap = gap
+        self.validation_type = validation_type
+        self.min_train_size = min_train_size
+        self.purge_window = purge_window
+        self.embargo_window = embargo_window
+
+        if validation_type not in ['expanding', 'rolling']:
+            raise ValueError("validation_type must be 'expanding' or 'rolling'")
 
     def split(self, X: pd.DataFrame) -> List[Tuple[np.ndarray, np.ndarray]]:
-        
+        """
+        Generate time series cross-validation splits
+
+        Returns:
+            List of (train_indices, test_indices) tuples
+        """
         splits = []
         n_samples = len(X)
 
-        for i in range(self.n_splits):
-            # Calculate split points
-            test_end = n_samples - (self.n_splits - i) * self.test_size
-            test_start = test_end - self.test_size
-            train_end = test_start - self.gap
+        if self.validation_type == 'expanding':
+            splits = self._expanding_window_split(n_samples)
+        elif self.validation_type == 'rolling':
+            splits = self._rolling_window_split(n_samples)
 
-            if train_end <= 0:
+        return splits
+
+    def _expanding_window_split(self, n_samples: int) -> List[Tuple[np.ndarray, np.ndarray]]:
+        """Expanding window validation: training set grows over time"""
+        splits = []
+
+        for i in range(self.n_splits):
+            # Calculate test period (most recent data)
+            test_end = n_samples - i * (self.test_size + self.embargo_window)
+            test_start = test_end - self.test_size
+
+            if test_start <= 0:
                 continue
 
-            train_indices = np.arange(train_end)
+            # Training period: all data before test period minus gap and purge
+            train_end = test_start - self.gap - self.purge_window
+
+            if train_end < self.min_train_size:
+                continue
+
+            train_start = 0
+            train_indices = np.arange(train_start, train_end)
+            test_indices = np.arange(test_start, test_end)
+
+            splits.append((train_indices, test_indices))
+
+        return splits
+
+    def _rolling_window_split(self, n_samples: int) -> List[Tuple[np.ndarray, np.ndarray]]:
+        """Rolling window validation: fixed-size training window"""
+        splits = []
+
+        for i in range(self.n_splits):
+            # Calculate test period
+            test_end = n_samples - i * (self.test_size + self.embargo_window)
+            test_start = test_end - self.test_size
+
+            if test_start <= 0:
+                continue
+
+            # Training period: fixed size window before test
+            train_end = test_start - self.gap - self.purge_window
+            train_start = max(0, train_end - self.min_train_size)
+
+            if train_end - train_start < self.min_train_size:
+                continue
+
+            train_indices = np.arange(train_start, train_end)
             test_indices = np.arange(test_start, test_end)
 
             splits.append((train_indices, test_indices))
@@ -88,13 +159,79 @@ class TimeSeriesCrossValidator:
         return splits
 
     def get_cv_splits(self, X: pd.DataFrame, y: pd.Series) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
-        
+        """
+        Get cross-validation splits with data
+
+        Returns:
+            List of (X_train, X_test, y_train, y_test) tuples
+        """
         splits = []
         for train_idx, test_idx in self.split(X):
             X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
             y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
             splits.append((X_train, X_test, y_train, y_test))
         return splits
+
+    def validate_temporal_order(self, X: pd.DataFrame) -> bool:
+        """
+        Validate that data is in proper temporal order
+        Assumes index contains datetime information
+        """
+        if isinstance(X.index, pd.DatetimeIndex):
+            return X.index.is_monotonic_increasing
+        else:
+            # If no datetime index, assume row order is temporal
+            logger.warning("No DatetimeIndex found, assuming row order is temporal")
+            return True
+
+    def validate_minimum_samples(self, X: pd.DataFrame) -> Tuple[bool, str]:
+        """
+        Validate that we have sufficient samples for cross-validation
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        n_samples = len(X)
+        min_required = self.min_train_size + self.test_size + self.gap + self.purge_window + self.embargo_window
+
+        if n_samples < min_required:
+            error_msg = f"Insufficient samples: {n_samples} < {min_required} (min_train={self.min_train_size}, test={self.test_size}, gap={self.gap}, purge={self.purge_window}, embargo={self.embargo_window})"
+            return False, error_msg
+
+        # Check if we can generate at least one valid split
+        splits = self.split(X)
+        if not splits:
+            error_msg = f"No valid CV splits could be generated with current parameters"
+            return False, error_msg
+
+        return True, ""
+
+    def get_split_info(self, X: pd.DataFrame) -> Dict[str, Any]:
+        """Get information about the CV splits"""
+        splits = self.split(X)
+        split_info = {
+            'n_splits': len(splits),
+            'validation_type': self.validation_type,
+            'test_size': self.test_size,
+            'gap': self.gap,
+            'min_train_size': self.min_train_size,
+            'purge_window': self.purge_window,
+            'embargo_window': self.embargo_window,
+            'temporal_order_valid': self.validate_temporal_order(X)
+        }
+
+        if splits:
+            train_sizes = [len(train_idx) for train_idx, _ in splits]
+            test_sizes = [len(test_idx) for _, test_idx in splits]
+
+            split_info.update({
+                'train_sizes': train_sizes,
+                'test_sizes': test_sizes,
+                'avg_train_size': np.mean(train_sizes),
+                'avg_test_size': np.mean(test_sizes)
+            })
+
+        return split_info
 
 
 class EnsembleModelTrainer:
@@ -535,6 +672,42 @@ class EnsembleModelTrainer:
         return predictions
 
     def save_models(self, symbol: str):
+        """Saves trained models, scalers, and feature selectors to disk."""
+        symbol_dir = self.model_dir / symbol
+        symbol_dir.mkdir(exist_ok=True)
+
+        for name, model in self.models.items():
+            joblib.dump(model, symbol_dir / f"{name}.pkl")
+        for name, scaler in self.scalers.items():
+            joblib.dump(scaler, symbol_dir / f"{name}_scaler.pkl")
+        for name, selector in self.feature_selectors.items():
+            joblib.dump(selector, symbol_dir / f"{name}_selector.pkl")
+        logger.info(f"Saved models for {symbol} to {symbol_dir}")
+
+    def load_models(self, symbol: str) -> bool:
+        """Loads trained models, scalers, and feature selectors from disk."""
+        symbol_dir = self.model_dir / symbol
+        if not symbol_dir.exists():
+            return False
+
+        try:
+            for model_file in symbol_dir.glob("*.pkl"):
+                if "_scaler.pkl" in model_file.name:
+                    model_name = model_file.name.replace("_scaler.pkl", "")
+                    self.scalers[model_name] = joblib.load(model_file)
+                elif "_selector.pkl" in model_file.name:
+                    model_name = model_file.name.replace("_selector.pkl", "")
+                    self.feature_selectors[model_name] = joblib.load(model_file)
+                else:
+                    model_name = model_file.name.replace(".pkl", "")
+                    self.models[model_name] = joblib.load(model_file)
+            logger.info(f"Loaded models for {symbol} from {symbol_dir}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to load models for {symbol}: {e}")
+            return False
+
+    def save_models(self, symbol: str):
         
         symbol_dir = self.model_dir / symbol
         symbol_dir.mkdir(exist_ok=True)
@@ -631,10 +804,132 @@ class EnsembleModelTrainer:
 
         return calibrated_models
 
+    def create_ensemble_model(self, model_names: List[str], X: pd.DataFrame, y: pd.Series) -> VotingClassifier:
+
+        estimators = []
+
+        for name in model_names:
+            if name in self.models:
+                estimators.append((name, self.models[name]))
+            else:
+                logger.warning(f"Model {name} not trained, skipping from ensemble")
+
+        if len(estimators) < 2:
+            raise ValueError("Need at least 2 models for ensemble")
+
+        ensemble = VotingClassifier(estimators=estimators, voting='soft')
+        ensemble.fit(X, y)
+
+        return ensemble
+
+    def create_stacking_ensemble(self, model_names: List[str], X: pd.DataFrame, y: pd.Series) -> Any:
+
+        from sklearn.ensemble import StackingClassifier
+
+        base_estimators = []
+        for name in model_names:
+            if name in self.models:
+                base_estimators.append((name, self.models[name]))
+            else:
+                logger.warning(f"Model {name} not trained, skipping from stacking")
+
+        if len(base_estimators) < 2:
+            raise ValueError("Need at least 2 models for stacking")
+
+        # Use LogisticRegression as meta-learner
+        meta_learner = LogisticRegression(random_state=42, max_iter=1000)
+
+        stacking_clf = StackingClassifier(
+            estimators=base_estimators,
+            final_estimator=meta_learner,
+            cv=self.cv.split(X),
+            stack_method='predict_proba',
+            n_jobs=-1
+        )
+
+        stacking_clf.fit(X, y)
+        return stacking_clf
+
+    def create_bagging_ensemble(self, base_model_name: str, X: pd.DataFrame, y: pd.Series) -> BaggingClassifier:
+
+        if base_model_name not in self.model_configs:
+            raise ValueError(f"Base model {base_model_name} not supported")
+
+        base_model = self.model_configs[base_model_name]['model']
+
+        bagging_clf = BaggingClassifier(
+            base_estimator=base_model,
+            n_estimators=25,
+            max_samples=0.8,
+            max_features=0.8,
+            bootstrap=True,
+            bootstrap_features=False,
+            random_state=42,
+            n_jobs=-1
+        )
+
+        bagging_clf.fit(X, y)
+        return bagging_clf
+
+    def create_advanced_ensemble(self, X: pd.DataFrame, y: pd.Series,
+                               ensemble_type: str = 'voting') -> Dict[str, Any]:
+
+        results = {}
+
+        # Train base models
+        base_models = ['random_forest', 'gradient_boosting']
+        if XGBOOST_AVAILABLE:
+            base_models.append('xgboost')
+        if LIGHTGBM_AVAILABLE:
+            base_models.append('lightgbm')
+        if CATBOOST_AVAILABLE:
+            base_models.append('catboost')
+
+        trained_models = {}
+        for model_name in base_models:
+            try:
+                model_result = self.train_single_model(model_name, X, y, optimize_hyperparams=False)
+                trained_models[model_name] = model_result
+                logger.info(f"Trained {model_name} for ensemble")
+            except Exception as e:
+                logger.error(f"Failed to train {model_name}: {e}")
+
+        if len(trained_models) < 2:
+            raise ValueError("Need at least 2 models for ensemble")
+
+        # Create different ensemble types
+        model_names = list(trained_models.keys())
+
+        if ensemble_type == 'voting' or ensemble_type == 'all':
+            try:
+                voting_ensemble = self.create_ensemble_model(model_names, X, y)
+                results['voting'] = voting_ensemble
+                logger.info("Created voting ensemble")
+            except Exception as e:
+                logger.error(f"Failed to create voting ensemble: {e}")
+
+        if ensemble_type == 'stacking' or ensemble_type == 'all':
+            try:
+                stacking_ensemble = self.create_stacking_ensemble(model_names, X, y)
+                results['stacking'] = stacking_ensemble
+                logger.info("Created stacking ensemble")
+            except Exception as e:
+                logger.error(f"Failed to create stacking ensemble: {e}")
+
+        if ensemble_type == 'bagging' or ensemble_type == 'all':
+            bagging_results = {}
+            for base_name in model_names[:2]:  # Limit to first 2 for efficiency
+                try:
+                    bagging_model = self.create_bagging_ensemble(base_name, X, y)
+                    bagging_results[base_name] = bagging_model
+                except Exception as e:
+                    logger.error(f"Failed to create bagging for {base_name}: {e}")
+            if bagging_results:
+                results['bagging'] = bagging_results
+        return results
+
 
 class NeuralArchitectureSearch:
-    
-
     def __init__(self):
         self.search_space = {
             'layers': [1, 2, 3, 4],
@@ -1402,8 +1697,6 @@ class ModelCompression:
 
         return stats
 
-class ModelEvaluator:
-
     def create_ensemble_model(self, model_names: List[str], X: pd.DataFrame, y: pd.Series) -> VotingClassifier:
         
         estimators = []
@@ -1530,7 +1823,7 @@ class ModelEvaluator:
         return results
 
     def predict_with_models(self, model_names: List[str], X: pd.DataFrame) -> Dict[str, np.ndarray]:
-        
+
         predictions = {}
 
         for name in model_names:
@@ -1595,6 +1888,99 @@ class ModelEvaluator:
         except Exception as e:
             logger.error(f"Error loading models for {symbol}: {e}")
             return False
+
+    def adapt_to_market_regime(self, regime: str, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
+        """
+        Adapt model training and hyperparameters based on detected market regime
+
+        Args:
+            regime: Market regime ('bull', 'bear', 'volatile', 'stable')
+            X: Feature matrix
+            y: Target variable
+
+        Returns:
+            Dict with regime-specific adaptations
+        """
+        adaptations = {
+            'regime': regime,
+            'model_weights': {},
+            'hyperparameter_adjustments': {},
+            'feature_importance_adjustments': {}
+        }
+
+        # Regime-specific model configurations
+        if regime == 'bull':
+            # Bull markets: Favor momentum and trend-following models
+            adaptations['model_weights'] = {
+                'gradient_boosting': 1.5,
+                'xgboost': 1.3,
+                'lightgbm': 1.3,
+                'random_forest': 1.0
+            }
+            adaptations['hyperparameter_adjustments'] = {
+                'learning_rate': 0.1,  # Faster learning for trending markets
+                'max_depth': 6,  # Deeper trees for capturing trends
+                'n_estimators': 200  # More estimators for stability
+            }
+
+        elif regime == 'bear':
+            # Bear markets: Favor mean-reversion and risk management
+            adaptations['model_weights'] = {
+                'random_forest': 1.4,
+                'gradient_boosting': 1.2,
+                'xgboost': 1.1,
+                'lightgbm': 1.1
+            }
+            adaptations['hyperparameter_adjustments'] = {
+                'learning_rate': 0.05,  # Slower learning for stability
+                'max_depth': 4,  # Shallower trees to avoid overfitting
+                'min_samples_split': 10  # Higher split requirements
+            }
+
+        elif regime == 'volatile':
+            # Volatile markets: Favor ensemble methods and regularization
+            adaptations['model_weights'] = {
+                'random_forest': 1.5,
+                'extra_trees': 1.3,
+                'bagging': 1.2,
+                'gradient_boosting': 1.0
+            }
+            adaptations['hyperparameter_adjustments'] = {
+                'max_features': 'sqrt',  # Feature subsampling for robustness
+                'min_samples_leaf': 5,  # Larger leaves for generalization
+                'subsample': 0.8  # Row subsampling for robustness
+            }
+
+        elif regime == 'stable':
+            # Stable markets: Favor simple, interpretable models
+            adaptations['model_weights'] = {
+                'random_forest': 1.2,
+                'gradient_boosting': 1.1,
+                'xgboost': 1.0,
+                'lightgbm': 1.0
+            }
+            adaptations['hyperparameter_adjustments'] = {
+                'learning_rate': 0.05,  # Conservative learning
+                'max_depth': 3,  # Simple trees
+                'n_estimators': 100  # Fewer estimators for speed
+            }
+
+        else:
+            # Default weights
+            adaptations['model_weights'] = {name: 1.0 for name in self.model_configs.keys()}
+
+        # Adjust cross-validation parameters based on regime
+        if regime == 'volatile':
+            # More conservative CV for volatile markets
+            self.cv.purge_window = max(5, self.cv.purge_window)
+            self.cv.embargo_window = max(3, self.cv.embargo_window)
+        elif regime == 'stable':
+            # Less conservative CV for stable markets
+            self.cv.purge_window = min(1, self.cv.purge_window)
+            self.cv.embargo_window = min(1, self.cv.embargo_window)
+
+        logger.info(f"Applied regime-specific adaptations for {regime} market")
+        return adaptations
 
 
 class ModelEvaluator:
@@ -1789,10 +2175,20 @@ def advanced_ml_agent(state: State) -> State:
                 logger.warning(f"Insufficient data for {symbol}: {len(features_df)} rows")
                 continue
 
-            # Prepare training data
-            from agents.feature_engineering import FeatureEngineer
-            engineer = FeatureEngineer()
-            X, y = engineer.prepare_training_data(features_df)
+            # The feature dataframe is already prepared with a target column
+            # by the feature_engineering_agent. We just need to separate X and y.
+            if 'target' not in features_df.columns:
+                logger.warning(f"Target column not found in features for {symbol}, skipping ML training")
+                continue
+
+            # Separate features and target
+            y = features_df['target']
+            X = features_df.drop(columns=['target'])
+            
+            # Remove any NaN values from target
+            mask = ~y.isna()
+            X = X[mask]
+            y = y[mask]
 
             if len(X) < 50:
                 logger.warning(f"Insufficient training samples for {symbol}: {len(X)}")
@@ -1809,13 +2205,10 @@ def advanced_ml_agent(state: State) -> State:
             ml_predictions[symbol] = {
                 'trained_models': trained_results,
                 'latest_prediction': prediction_results,
-                'model_comparison': predictor.get_model_comparison(trained_results).to_dict(),
+                'model_comparison': predictor.get_model_comparison(trained_results).to_dict() if trained_results else {},
                 'feature_importance': {model: results.get('feature_importance', {})
                                      for model, results in trained_results.items()}
             }
-
-            # Save models
-            predictor.trainer.save_models(symbol)
 
             logger.info(f"Completed ML training and prediction for {symbol}")
 

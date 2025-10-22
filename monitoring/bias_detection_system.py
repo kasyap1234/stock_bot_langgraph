@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 
 class BiasType(Enum):
-    """Types of systematic biases that can be detected"""
     OVERCONFIDENCE = "overconfidence"
     UNDERCONFIDENCE = "underconfidence"
     DIRECTIONAL = "directional"
@@ -40,7 +39,6 @@ class BiasType(Enum):
 
 
 class BiasCorrection(Enum):
-    """Types of bias corrections that can be applied"""
     CONFIDENCE_CALIBRATION = "confidence_calibration"
     SIGNAL_ADJUSTMENT = "signal_adjustment"
     WEIGHT_REBALANCING = "weight_rebalancing"
@@ -52,7 +50,6 @@ class BiasCorrection(Enum):
 
 @dataclass
 class BiasEvidence:
-    """Evidence supporting a bias detection"""
     evidence_type: str
     metric_name: str
     expected_value: float
@@ -66,7 +63,6 @@ class BiasEvidence:
 
 @dataclass
 class BiasDetectionResult:
-    """Comprehensive bias detection result"""
     bias_id: str
     bias_type: BiasType
     severity: str  # 'low', 'medium', 'high', 'critical'
@@ -83,7 +79,6 @@ class BiasDetectionResult:
 
 @dataclass
 class CorrectionAction:
-    """Represents a bias correction action"""
     action_id: str
     bias_id: str
     correction_type: BiasCorrection
@@ -99,7 +94,6 @@ class CorrectionAction:
 
 @dataclass
 class BiasMonitoringConfig:
-    """Configuration for bias monitoring"""
     model_name: str
     detection_window: int = 100  # Number of predictions to analyze
     min_sample_size: int = 20    # Minimum samples for bias detection
@@ -113,10 +107,6 @@ class BiasMonitoringConfig:
 
 
 class SystematicBiasDetector:
-    """
-    Comprehensive systematic bias detection and correction system
-    """
-    
     def __init__(self):
         self.monitoring_configs: Dict[str, BiasMonitoringConfig] = {}
         self.detection_history: List[BiasDetectionResult] = []
@@ -150,7 +140,6 @@ class SystematicBiasDetector:
         }
     
     def register_model(self, config: BiasMonitoringConfig) -> None:
-        """Register a model for bias monitoring"""
         try:
             self.monitoring_configs[config.model_name] = config
             logger.info(f"Registered model for bias monitoring: {config.model_name}")
@@ -159,7 +148,6 @@ class SystematicBiasDetector:
             logger.error(f"Error registering model for bias monitoring: {e}")
     
     def add_prediction_data(self, model_name: str, prediction_data: Dict[str, Any]) -> None:
-        """Add prediction data for bias analysis"""
         try:
             # Ensure required fields are present
             required_fields = ['prediction_id', 'predicted_action', 'confidence', 
@@ -181,7 +169,6 @@ class SystematicBiasDetector:
             logger.error(f"Error adding prediction data for {model_name}: {e}")
     
     def _run_bias_detection(self, model_name: str) -> List[BiasDetectionResult]:
-        """Run comprehensive bias detection for a model"""
         try:
             config = self.monitoring_configs.get(model_name)
             if not config:
@@ -223,9 +210,8 @@ class SystematicBiasDetector:
             logger.error(f"Error running bias detection for {model_name}: {e}")
             return []
     
-    def _detect_overconfidence_bias(self, model_name: str, predictions: List[Dict], 
+    def _detect_overconfidence_bias(self, model_name: str, predictions: List[Dict],
                                    config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
-        """Detect overconfidence bias (high confidence but low accuracy)"""
         try:
             # Filter high confidence predictions
             high_conf_predictions = [p for p in predictions if p['confidence'] > 0.8]
@@ -288,9 +274,8 @@ class SystematicBiasDetector:
             logger.error(f"Error detecting overconfidence bias: {e}")
             return None
     
-    def _detect_underconfidence_bias(self, model_name: str, predictions: List[Dict], 
-                                    config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
-        """Detect underconfidence bias (low confidence but high accuracy)"""
+    def _detect_underconfidence_bias(self, model_name: str, predictions: List[Dict],
+                                     config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
         try:
             # Filter low confidence predictions
             low_conf_predictions = [p for p in predictions if p['confidence'] < 0.6]
@@ -348,9 +333,8 @@ class SystematicBiasDetector:
             logger.error(f"Error detecting underconfidence bias: {e}")
             return None
     
-    def _detect_directional_bias(self, model_name: str, predictions: List[Dict], 
-                                config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
-        """Detect directional bias (consistently better/worse for BUY vs SELL)"""
+    def _detect_directional_bias(self, model_name: str, predictions: List[Dict],
+                                 config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
         try:
             # Separate predictions by action
             buy_predictions = [p for p in predictions if p['predicted_action'].upper() == 'BUY']
@@ -410,9 +394,8 @@ class SystematicBiasDetector:
             logger.error(f"Error detecting directional bias: {e}")
             return None
     
-    def _detect_regime_dependent_bias(self, model_name: str, predictions: List[Dict], 
-                                     config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
-        """Detect regime-dependent bias (poor performance in specific market regimes)"""
+    def _detect_regime_dependent_bias(self, model_name: str, predictions: List[Dict],
+                                      config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
         try:
             # Group predictions by market regime (if available)
             regime_groups = defaultdict(list)
@@ -480,9 +463,8 @@ class SystematicBiasDetector:
             logger.error(f"Error detecting regime-dependent bias: {e}")
             return None
     
-    def _detect_volatility_dependent_bias(self, model_name: str, predictions: List[Dict], 
-                                         config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
-        """Detect volatility-dependent bias"""
+    def _detect_volatility_dependent_bias(self, model_name: str, predictions: List[Dict],
+                                          config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
         try:
             # Group predictions by volatility level (if available)
             volatility_groups = {'low': [], 'medium': [], 'high': []}
@@ -552,9 +534,8 @@ class SystematicBiasDetector:
             logger.error(f"Error detecting volatility-dependent bias: {e}")
             return None
     
-    def _detect_temporal_bias(self, model_name: str, predictions: List[Dict], 
-                             config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
-        """Detect temporal bias (performance degradation over time)"""
+    def _detect_temporal_bias(self, model_name: str, predictions: List[Dict],
+                              config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
         try:
             # Sort predictions by timestamp
             sorted_predictions = sorted(predictions, key=lambda x: x['timestamp'])
@@ -617,23 +598,20 @@ class SystematicBiasDetector:
             logger.error(f"Error detecting temporal bias: {e}")
             return None
     
-    def _detect_confirmation_bias(self, model_name: str, predictions: List[Dict], 
-                                 config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
-        """Detect confirmation bias (tendency to confirm prior beliefs)"""
+    def _detect_confirmation_bias(self, model_name: str, predictions: List[Dict],
+                                   config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
         # This would require more complex analysis of prediction patterns
         # For now, return None as this is a complex bias to detect automatically
         return None
     
-    def _detect_anchoring_bias(self, model_name: str, predictions: List[Dict], 
-                              config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
-        """Detect anchoring bias (over-reliance on first piece of information)"""
+    def _detect_anchoring_bias(self, model_name: str, predictions: List[Dict],
+                                config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
         # This would require analysis of how predictions change with new information
         # For now, return None as this requires more sophisticated analysis
         return None
     
-    def _detect_recency_bias(self, model_name: str, predictions: List[Dict], 
-                            config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
-        """Detect recency bias (overweighting recent information)"""
+    def _detect_recency_bias(self, model_name: str, predictions: List[Dict],
+                              config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
         try:
             # Sort predictions by timestamp
             sorted_predictions = sorted(predictions, key=lambda x: x['timestamp'])
@@ -697,22 +675,19 @@ class SystematicBiasDetector:
             logger.error(f"Error detecting recency bias: {e}")
             return None
     
-    def _detect_survivorship_bias(self, model_name: str, predictions: List[Dict], 
-                                 config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
-        """Detect survivorship bias (only analyzing successful cases)"""
+    def _detect_survivorship_bias(self, model_name: str, predictions: List[Dict],
+                                   config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
         # This would require analysis of what data is being excluded
         # For now, return None as this requires access to excluded data
         return None
     
-    def _detect_selection_bias(self, model_name: str, predictions: List[Dict], 
-                              config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
-        """Detect selection bias (non-random selection of data)"""
+    def _detect_selection_bias(self, model_name: str, predictions: List[Dict],
+                                config: BiasMonitoringConfig) -> Optional[BiasDetectionResult]:
         # This would require analysis of data selection patterns
         # For now, return None as this requires more sophisticated analysis
         return None
     
     def _calculate_severity(self, deviation: float, thresholds: Dict[str, float]) -> str:
-        """Calculate bias severity based on deviation and thresholds"""
         abs_deviation = abs(deviation)
         
         if abs_deviation >= thresholds['critical']:
@@ -725,7 +700,6 @@ class SystematicBiasDetector:
             return 'low'
     
     def _apply_automatic_corrections(self, bias_result: BiasDetectionResult) -> None:
-        """Apply automatic corrections for detected bias"""
         try:
             for correction_type in bias_result.recommended_corrections:
                 if correction_type in self.correction_methods:
@@ -756,9 +730,8 @@ class SystematicBiasDetector:
         except Exception as e:
             logger.error(f"Error applying automatic corrections: {e}")
     
-    def _apply_confidence_calibration(self, action: CorrectionAction, 
-                                     bias_result: BiasDetectionResult) -> bool:
-        """Apply confidence calibration correction"""
+    def _apply_confidence_calibration(self, action: CorrectionAction,
+                                      bias_result: BiasDetectionResult) -> bool:
         try:
             for model_name in action.target_models:
                 if model_name not in self.model_calibrations:
@@ -780,9 +753,8 @@ class SystematicBiasDetector:
             logger.error(f"Error applying confidence calibration: {e}")
             return False
     
-    def _apply_signal_adjustment(self, action: CorrectionAction, 
-                                bias_result: BiasDetectionResult) -> bool:
-        """Apply signal adjustment correction"""
+    def _apply_signal_adjustment(self, action: CorrectionAction,
+                                  bias_result: BiasDetectionResult) -> bool:
         try:
             for model_name in action.target_models:
                 if model_name not in self.model_calibrations:
@@ -805,9 +777,8 @@ class SystematicBiasDetector:
             logger.error(f"Error applying signal adjustment: {e}")
             return False
     
-    def _apply_weight_rebalancing(self, action: CorrectionAction, 
-                                 bias_result: BiasDetectionResult) -> bool:
-        """Apply weight rebalancing correction"""
+    def _apply_weight_rebalancing(self, action: CorrectionAction,
+                                   bias_result: BiasDetectionResult) -> bool:
         try:
             for model_name in action.target_models:
                 if model_name not in self.model_calibrations:
@@ -826,9 +797,8 @@ class SystematicBiasDetector:
             logger.error(f"Error applying weight rebalancing: {e}")
             return False
     
-    def _apply_threshold_adjustment(self, action: CorrectionAction, 
-                                   bias_result: BiasDetectionResult) -> bool:
-        """Apply threshold adjustment correction"""
+    def _apply_threshold_adjustment(self, action: CorrectionAction,
+                                     bias_result: BiasDetectionResult) -> bool:
         try:
             for model_name in action.target_models:
                 if model_name not in self.model_calibrations:
@@ -848,9 +818,8 @@ class SystematicBiasDetector:
             logger.error(f"Error applying threshold adjustment: {e}")
             return False
     
-    def _apply_ensemble_reweighting(self, action: CorrectionAction, 
-                                   bias_result: BiasDetectionResult) -> bool:
-        """Apply ensemble reweighting correction"""
+    def _apply_ensemble_reweighting(self, action: CorrectionAction,
+                                     bias_result: BiasDetectionResult) -> bool:
         try:
             # This would integrate with ensemble systems to reweight models
             logger.info("Applied ensemble reweighting correction")
@@ -861,7 +830,6 @@ class SystematicBiasDetector:
             return False
     
     def _notify_bias_detection(self, bias_result: BiasDetectionResult) -> None:
-        """Notify callbacks of bias detection"""
         for callback in self.callbacks:
             try:
                 callback('bias_detected', bias_result.__dict__)
@@ -869,17 +837,14 @@ class SystematicBiasDetector:
                 logger.error(f"Bias detection callback error: {e}")
     
     def add_callback(self, callback: Callable) -> None:
-        """Add callback for bias detection events"""
         self.callbacks.append(callback)
     
     def remove_callback(self, callback: Callable) -> None:
-        """Remove callback"""
         if callback in self.callbacks:
             self.callbacks.remove(callback)
     
-    def get_bias_report(self, model_name: Optional[str] = None, 
-                       days: int = 30) -> Dict[str, Any]:
-        """Get comprehensive bias detection report"""
+    def get_bias_report(self, model_name: Optional[str] = None,
+                         days: int = 30) -> Dict[str, Any]:
         try:
             cutoff_time = datetime.now() - timedelta(days=days)
             
@@ -925,7 +890,6 @@ class SystematicBiasDetector:
             return {'error': str(e)}
     
     def _calculate_bias_trends(self, detections: List[BiasDetectionResult]) -> Dict[str, Any]:
-        """Calculate bias trends over time"""
         try:
             if not detections:
                 return {}
@@ -967,7 +931,6 @@ def create_bias_monitoring_config(model_name: str,
                                  detection_window: int = 100,
                                  enabled_bias_types: Optional[List[BiasType]] = None,
                                  auto_correction: bool = True) -> BiasMonitoringConfig:
-    """Create a bias monitoring configuration"""
     if enabled_bias_types is None:
         enabled_bias_types = [
             BiasType.OVERCONFIDENCE,
