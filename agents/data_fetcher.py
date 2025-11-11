@@ -32,27 +32,52 @@ def _get_stock_data(symbol: str, period: str = "1y") -> pd.DataFrame:
         pandas DataFrame with OHLCV data
     """
     try:
-        from yahooquery import Ticker
-        ticker = Ticker(symbol)
+        # Try yfinance first (more stable, no browser impersonation issues)
+        import yfinance as yf
+        ticker = yf.Ticker(symbol)
         data = ticker.history(period=period)
 
         if data.empty:
-            raise Exception("No data from API")
+            raise Exception("No data from yfinance")
 
-        # Handle MultiIndex if present (e.g., when yahooquery returns tuples in index)
-        if isinstance(data.index, pd.MultiIndex):
-            data = data.reset_index()
-            data.set_index('date', inplace=True)
+        # Ensure index is datetime
+        if not isinstance(data.index, pd.DatetimeIndex):
+            data.index = pd.to_datetime(data.index)
 
-        # Convert to UTC and make tz-naive to avoid timezone mismatch errors
-        data.index = pd.to_datetime(data.index, utc=True).tz_localize(None)
+        # Make tz-naive to avoid timezone mismatch errors
+        if data.index.tz is not None:
+            data.index = data.index.tz_localize(None)
+
         data = data.sort_index()  # Sort by date to ensure proper indexing
 
-        logger.info(f"Fetched real data for {symbol}: {len(data)} rows")
+        logger.info(f"Fetched data for {symbol} using yfinance: {len(data)} rows")
         return data
     except Exception as e:
-        logger.error(f"Failed to fetch real data for {symbol}: {e}")
-        raise  # Raise to prevent fallback; handle in caller if needed
+        logger.error(f"Failed to fetch data for {symbol}: {e}")
+
+        # Fallback to yahooquery if yfinance fails
+        try:
+            from yahooquery import Ticker
+            ticker = Ticker(symbol)
+            data = ticker.history(period=period)
+
+            if data.empty:
+                raise Exception("No data from yahooquery")
+
+            # Handle MultiIndex if present
+            if isinstance(data.index, pd.MultiIndex):
+                data = data.reset_index()
+                data.set_index('date', inplace=True)
+
+            # Convert to UTC and make tz-naive
+            data.index = pd.to_datetime(data.index, utc=True).tz_localize(None)
+            data = data.sort_index()
+
+            logger.info(f"Fetched data for {symbol} using yahooquery fallback: {len(data)} rows")
+            return data
+        except Exception as e2:
+            logger.error(f"Both yfinance and yahooquery failed for {symbol}: yfinance={e}, yahooquery={e2}")
+            raise
 
 
 def data_fetcher_agent(state: State, symbols: List[str] = None, real_time: bool = False,
