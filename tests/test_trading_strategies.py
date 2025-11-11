@@ -1,7 +1,4 @@
-"""
-Comprehensive tests for trading strategies framework.
-Tests all strategy implementations with realistic market data.
-"""
+
 
 import pytest
 import pandas as pd
@@ -19,10 +16,10 @@ from data.models import State
 
 
 class TestStrategyConfig:
-    """Test StrategyConfig class."""
+    
 
     def test_strategy_config_creation(self):
-        """Test creating a strategy configuration."""
+        
         config = StrategyConfig(
             name="Test Strategy",
             description="Test description",
@@ -37,10 +34,10 @@ class TestStrategyConfig:
 
 
 class TestTradingSignal:
-    """Test TradingSignal class."""
+    
 
     def test_trading_signal_creation(self):
-        """Test creating a trading signal."""
+        
         signal = TradingSignal(
             symbol="TEST.NS",
             action="BUY",
@@ -58,10 +55,10 @@ class TestTradingSignal:
 
 
 class TestStrategyFactory:
-    """Test StrategyFactory class."""
+    
 
     def test_create_trend_following_strategy(self):
-        """Test creating a trend following strategy."""
+        
         config = StrategyFactory.get_default_configs()['trend_following']
         strategy = StrategyFactory.create_strategy('trend_following', config)
 
@@ -69,7 +66,7 @@ class TestStrategyFactory:
         assert strategy.config.name == "Trend Following"
 
     def test_create_mean_reversion_strategy(self):
-        """Test creating a mean reversion strategy."""
+        
         config = StrategyFactory.get_default_configs()['mean_reversion']
         strategy = StrategyFactory.create_strategy('mean_reversion', config)
 
@@ -77,7 +74,7 @@ class TestStrategyFactory:
         assert strategy.config.name == "Mean Reversion"
 
     def test_create_breakout_strategy(self):
-        """Test creating a breakout strategy."""
+        
         config = StrategyFactory.get_default_configs()['breakout']
         strategy = StrategyFactory.create_strategy('breakout', config)
 
@@ -85,7 +82,7 @@ class TestStrategyFactory:
         assert strategy.config.name == "Breakout Trading"
 
     def test_create_sentiment_strategy(self):
-        """Test creating a sentiment-driven strategy."""
+        
         config = StrategyFactory.get_default_configs()['sentiment_driven']
         strategy = StrategyFactory.create_strategy('sentiment_driven', config)
 
@@ -93,7 +90,7 @@ class TestStrategyFactory:
         assert strategy.config.name == "Sentiment Driven"
 
     def test_invalid_strategy_type(self):
-        """Test creating an invalid strategy type."""
+        
         config = StrategyConfig("Test", "Test", {})
 
         with pytest.raises(ValueError, match="Unknown strategy type"):
@@ -101,10 +98,10 @@ class TestStrategyFactory:
 
 
 class TestTrendFollowingStrategy:
-    """Test TrendFollowingStrategy class."""
+    
 
     def setup_method(self):
-        """Set up test data."""
+        
         self.config = StrategyFactory.get_default_configs()['trend_following']
         self.strategy = TrendFollowingStrategy(self.config)
 
@@ -127,7 +124,7 @@ class TestTrendFollowingStrategy:
         }, index=dates)
 
     def test_generate_signals_trending_up(self):
-        """Test signal generation for uptrending market."""
+        
         signals = self.strategy.generate_signals(self.test_data)
 
         assert len(signals) > 0
@@ -136,7 +133,7 @@ class TestTrendFollowingStrategy:
         assert len(buy_signals) > 0
 
     def test_validate_signal(self):
-        """Test signal validation."""
+        
         signal = TradingSignal(
             symbol="TEST.NS",
             action="BUY",
@@ -149,17 +146,17 @@ class TestTrendFollowingStrategy:
         assert isinstance(is_valid, bool)
 
     def test_calculate_position_size(self):
-        """Test position size calculation."""
+        
         quantity = self.strategy.calculate_position_size(100000, 100.0)
         assert quantity > 0
         assert isinstance(quantity, int)
 
 
 class TestMeanReversionStrategy:
-    """Test MeanReversionStrategy class."""
+    
 
     def setup_method(self):
-        """Set up test data."""
+        
         self.config = StrategyFactory.get_default_configs()['mean_reversion']
         self.strategy = MeanReversionStrategy(self.config)
 
@@ -182,7 +179,7 @@ class TestMeanReversionStrategy:
         }, index=dates)
 
     def test_generate_signals_oversold(self):
-        """Test signal generation for oversold conditions."""
+        
         # Make the last price very low (oversold)
         test_data = self.test_data.copy()
         test_data.loc[test_data.index[-1], 'Close'] = 85  # Below mean
@@ -194,7 +191,7 @@ class TestMeanReversionStrategy:
         assert len(buy_signals) > 0
 
     def test_generate_signals_overbought(self):
-        """Test signal generation for overbought conditions."""
+        
         # Make the last price very high (overbought)
         test_data = self.test_data.copy()
         test_data.loc[test_data.index[-1], 'Close'] = 115  # Above mean
@@ -207,10 +204,10 @@ class TestMeanReversionStrategy:
 
 
 class TestBreakoutStrategy:
-    """Test BreakoutStrategy class."""
+    
 
     def setup_method(self):
-        """Set up test data."""
+        
         self.config = StrategyFactory.get_default_configs()['breakout']
         self.strategy = BreakoutStrategy(self.config)
 
@@ -238,7 +235,7 @@ class TestBreakoutStrategy:
         }, index=pd.date_range('2023-01-01', periods=50, freq='D'))
 
     def test_generate_signals_breakout(self):
-        """Test signal generation for breakout conditions."""
+        
         signals = self.strategy.generate_signals(self.test_data)
 
         # Should detect breakout and generate signals
@@ -246,10 +243,10 @@ class TestBreakoutStrategy:
 
 
 class TestSentimentDrivenStrategy:
-    """Test SentimentDrivenStrategy class."""
+    
 
     def setup_method(self):
-        """Set up test data."""
+        
         self.config = StrategyFactory.get_default_configs()['sentiment_driven']
         self.strategy = SentimentDrivenStrategy(self.config)
 
@@ -265,7 +262,7 @@ class TestSentimentDrivenStrategy:
         }, index=dates)
 
     def test_generate_signals_with_sentiment(self):
-        """Test signal generation with sentiment data."""
+        
         # Mock state with sentiment data
         mock_state = State()
         mock_state.sentiment_scores = {
@@ -283,7 +280,7 @@ class TestSentimentDrivenStrategy:
         assert len(buy_signals) > 0
 
     def test_generate_signals_without_sentiment(self):
-        """Test signal generation without sentiment data."""
+        
         signals = self.strategy.generate_signals(self.test_data)
 
         # Should return empty list when no sentiment data
@@ -291,10 +288,10 @@ class TestSentimentDrivenStrategy:
 
 
 class TestEnsembleStrategy:
-    """Test EnsembleStrategy class."""
+    
 
     def setup_method(self):
-        """Set up test data."""
+        
         # Create individual strategies
         trend_config = StrategyFactory.get_default_configs()['trend_following']
         mean_rev_config = StrategyFactory.get_default_configs()['mean_reversion']
@@ -333,7 +330,7 @@ class TestEnsembleStrategy:
         }, index=dates)
 
     def test_generate_signals_ensemble(self):
-        """Test ensemble signal generation."""
+        
         signals = self.strategy.generate_signals(self.test_data)
 
         # Should generate signals based on ensemble decision
@@ -345,7 +342,7 @@ class TestEnsembleStrategy:
             assert 0 <= signal.confidence <= 1
 
     def test_aggregate_signals(self):
-        """Test signal aggregation."""
+        
         signals = [
             TradingSignal("TEST.NS", "BUY", 0.8, 100, datetime.now()),
             TradingSignal("TEST.NS", "BUY", 0.6, 100, datetime.now()),
@@ -361,10 +358,10 @@ class TestEnsembleStrategy:
 
 
 class TestStrategyIntegration:
-    """Test strategy integration with backtesting engine."""
+    
 
     def test_strategy_with_backtesting_engine(self):
-        """Test running strategy with backtesting engine."""
+        
         from simulation.backtesting_engine import BacktestingEngine
 
         # Create strategy

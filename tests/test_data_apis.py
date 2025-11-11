@@ -2,9 +2,8 @@ import pytest
 from unittest.mock import Mock, patch
 import pandas as pd
 from data.apis import get_stock_history, get_fundamentals, get_stock_info, _retry_with_backoff
-from config.config import ALPHA_VANTAGE_API_KEY
+from config.api_config import ALPHA_VANTAGE_API_KEY
 
-# Mock data for testing
 MOCK_HISTORY_DATAFRAME = pd.DataFrame({
     'Open': [150.0, 152.0, 151.5],
     'High': [155.0, 156.0, 155.5],
@@ -187,3 +186,68 @@ def test_retry_with_backoff_base_delay(mocker):
     assert spy.call_count == 2
     spy.assert_any_call(2.0)
     spy.assert_any_call(4.0)
+
+
+def test_get_stock_history_nse_success():
+    """Test successful NSE fetch with non-zero data."""
+    mock_df = pd.DataFrame({
+        'date': pd.date_range(start='2024-01-01', periods=5),
+        'open': [100, 101, 102, 103, 104],
+        'high': [105, 106, 107, 108, 109],
+        'low': [95, 96, 97, 98, 99],
+        'close': [102, 103, 104, 105, 106],
+        'volume': [1000000, 1100000, 1200000, 1300000, 1400000]
+    })
+    
+    with patch('yahooquery.Ticker') as MockTicker:
+        mock_ticker = MockTicker.return_value
+        mock_ticker.history.return_value = mock_df
+        
+        result = get_stock_history('RELIANCE.NS', '1mo', '1d')
+        
+        assert len(result) == 5
+        assert all(r['close'] > 0 for r in result)
+        assert all(r['volume'] > 0 for r in result)
+        assert result[0]['symbol'] == 'RELIANCE.NS'
+
+
+def test_get_stock_history_all_zero_raises():
+    """Test that all-zero data raises DataFetchingError."""
+    mock_df = pd.DataFrame({
+        'date': pd.date_range(start='2024-01-01', periods=5),
+        'open': [0] * 5,
+        'high': [0] * 5,
+        'low': [0] * 5,
+        'close': [0] * 5,
+        'volume': [0] * 5
+    })
+    
+    with patch('yahooquery.Ticker') as MockTicker:
+        mock_ticker = MockTicker.return_value
+        mock_ticker.history.return_value = mock_df
+        
+        with pytest.raises(DataFetchingError):
+            get_stock_history('TATAMOTORS.NS', '1mo', '1d')
+
+
+def test_get_stock_history_low_quality_raises(mocker):
+    """Test that low quality score raises DataFetchingError."""
+    # Mock successful fetch
+    mock_df = pd.DataFrame({
+        'date': pd.date_range(start='2024-01-01', periods=5),
+        'open': [100, 101, 102, 103, 104],
+        'high': [105, 106, 107, 108, 109],
+        'low': [95, 96, 97, 98, 99],
+        'close': [102, 0, 104, 0, 106],  # Some zeros to lower score
+        'volume': [1000000, 0, 1200000, 0, 1400000]
+    })
+    
+    with patch('yahooquery.Ticker') as MockTicker:
+        mock_ticker = MockTicker.return_value
+        mock_ticker.history.return_value = mock_df
+        
+        # Mock validate_data_quality to return low score
+        mocker.patch('data.apis.validate_data_quality', return_value=Mock(spec=DataQualityReport, overall_quality_score=0.7))
+        
+        with pytest.raises(DataFetchingError):
+            get_stock_history('RELIANCE.NS', '1mo', '1d')

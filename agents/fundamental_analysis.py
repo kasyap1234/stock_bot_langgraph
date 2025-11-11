@@ -1,22 +1,18 @@
-"""
-Fundamental analysis agent for stock data.
-Analyzes company financial fundamentals using Alpha Vantage and other sources.
-"""
+
 
 import logging
 from functools import lru_cache
 from typing import Dict, Union, Optional
 
 import requests
+import numpy as np
 
-from config.config import ALPHA_VANTAGE_API_KEY, API_RATE_LIMIT_DELAY
+from config.api_config import ALPHA_VANTAGE_API_KEY, API_RATE_LIMIT_DELAY
 from utils.scraping_utils import rate_limited_get, extract_numeric_value, safe_extract_text, add_request_delay, find_element_by_multiple_selectors
 from data.models import State
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# Indian market sector-specific PE benchmarks (min, max)
 SECTOR_PE_BENCHMARKS = {
     'PSU': (10, 15),  # Public Sector Undertakings
     'FMCG': (50, 70),  # Fast Moving Consumer Goods
@@ -30,7 +26,6 @@ SECTOR_PE_BENCHMARKS = {
     'Default': (20, 30)  # Default for unknown sectors
 }
 
-# Mapping of major Indian stocks to sectors
 STOCK_SECTORS = {
     'RELIANCE.NS': 'Energy',
     'TCS.NS': 'IT',
@@ -85,15 +80,7 @@ STOCK_SECTORS = {
 
 
 def get_stock_sector(symbol: str) -> str:
-    """
-    Determine the sector for a given stock symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE.NS")
-
-    Returns:
-        Sector name or 'Default' if unknown
-    """
+    
     # Try exact match
     if symbol in STOCK_SECTORS:
         return STOCK_SECTORS[symbol]
@@ -109,15 +96,7 @@ def get_stock_sector(symbol: str) -> str:
 
 @lru_cache(maxsize=128)
 def get_historical_pe_analysis(symbol: str) -> Dict[str, float]:
-    """
-    Fetch historical PE analysis for a stock symbol.
-
-    Args:
-        symbol: Stock symbol
-
-    Returns:
-        Dictionary with historical PE metrics
-    """
+    
     try:
         from yahooquery import Ticker
         ticker = Ticker(symbol)
@@ -153,15 +132,7 @@ def get_historical_pe_analysis(symbol: str) -> Dict[str, float]:
 
 @lru_cache(maxsize=128)
 def _get_fundamental_data(symbol: str) -> Dict[str, Union[float, str]]:
-    """
-    Fetch fundamental data for a stock symbol using multiple free sources.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE.NS")
-
-    Returns:
-        Dictionary containing fundamental metrics
-    """
+    
     # Convert NSE symbol to base symbol
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
@@ -249,20 +220,24 @@ def _get_fundamental_data(symbol: str) -> Dict[str, Union[float, str]]:
     except Exception as e:
         logger.warning(f"Web scraping failed for {symbol}: {e}")
 
-    logger.warning(f"All fundamental data sources failed for {symbol}")
-    return {"error": "All data sources unavailable"}
+    logger.error(f"All fundamental data sources failed for {symbol} - fundamental analysis will be inaccurate")
+    # Return error indicator instead of default values to avoid misleading analysis
+    return {
+        "error": "All fundamental data sources failed",
+        "PERatio": None,
+        "EPS": None,
+        "DebtEquityRatio": None,
+        "MarketCapitalization": None,
+        "DividendYield": None,
+        "Beta": None,
+        "TotalRevenue": None,
+        "NetIncome": None,
+        "data_unavailable": True
+    }
 
 
 def _scrape_indian_fundamentals(symbol: str) -> Dict[str, Union[float, str]]:
-    """
-    Scrape fundamental data from multiple Indian financial websites.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE.NS")
-
-    Returns:
-        Dictionary with fundamental metrics
-    """
+    
     from bs4 import BeautifulSoup
 
     try:
@@ -462,26 +437,45 @@ def _scrape_indian_fundamentals(symbol: str) -> Dict[str, Union[float, str]]:
 
 
 def _analyze_fundamentals(fund_data: Dict, symbol: str) -> Dict[str, Union[float, str]]:
-    """
-    Analyze fundamental data and extract key metrics with valuations.
-
-    Args:
-        fund_data: Raw fundamental data from API
-        symbol: Stock symbol for sector and historical analysis
-
-    Returns:
-        Dictionary with analyzed fundamentals and valuations
-    """
+    
     try:
         fundamentals = {}
+        
+        # Check if data is actually available
+        if fund_data.get("data_unavailable") or fund_data.get("error"):
+            logger.error(f"Fundamental data unavailable for {symbol}, cannot perform accurate analysis")
+            return {
+                "error": "Fundamental data unavailable",
+                "fundamental_signal": "HOLD",
+                "fundamental_score": 0.0,
+                "fundamental_confidence": 0.0,
+                "data_quality": "unavailable"
+            }
 
-        # Extract key metrics
+        # Extract key metrics with proper None handling
         pe_ratio = float(fund_data.get("PERatio", 0)) if fund_data.get("PERatio") not in [None, "None", ""] else None
         eps = float(fund_data.get("EPS", 0)) if fund_data.get("EPS") not in [None, "None", ""] else None
         de_ratio = float(fund_data.get("DebtEquityRatio", fund_data.get("DebtEquityRatio", None))) if fund_data.get("DebtEquityRatio", fund_data.get("DebtEquityRatio")) else None
         roe = float(fund_data.get("ROE", 0)) if fund_data.get("ROE") not in [None, "None", ""] else None
         roa = float(fund_data.get("ROA", 0)) if fund_data.get("ROA") not in [None, "None", ""] else None
         pb = float(fund_data.get("PB", 0)) if fund_data.get("PB") not in [None, "None", ""] else None
+        
+        # Track data quality
+        available_metrics = sum(1 for x in [pe_ratio, eps, de_ratio, roe, roa, pb] if x is not None)
+        data_quality = "good" if available_metrics >= 4 else "fair" if available_metrics >= 2 else "poor"
+        fundamentals["data_quality"] = data_quality
+        fundamentals["available_metrics_count"] = available_metrics
+        
+        if available_metrics < 2:
+            logger.warning(f"Insufficient fundamental data for {symbol} (only {available_metrics}/6 metrics available)")
+            return {
+                "error": "Insufficient fundamental data",
+                "fundamental_signal": "HOLD",
+                "fundamental_score": 0.0,
+                "fundamental_confidence": 0.0,
+                "data_quality": "poor",
+                "available_metrics_count": available_metrics
+            }
 
         fundamentals["PE"] = pe_ratio
         fundamentals["EPS"] = eps
@@ -549,6 +543,75 @@ def _analyze_fundamentals(fund_data: Dict, symbol: str) -> Dict[str, Union[float
         else:
             fundamentals["historical_valuation"] = "historical data unavailable"
 
+        valuation_map = {
+            "undervalued": 1.0,
+            "potentially undervalued": 0.6,
+            "fairly valued": 0.0,
+            "in line with history": 0.0,
+            "historical data unavailable": 0.0,
+            "unknown": 0.0,
+            "overvalued": -1.0,
+            "potentially overvalued": -0.6
+        }
+
+        valuation_components = [
+            valuation_map.get(fundamentals.get(key, "unknown"), 0.0)
+            for key in ["general_valuation", "sector_valuation", "historical_valuation"]
+            if fundamentals.get(key) is not None
+        ]
+        valuation_score = float(np.mean(valuation_components)) if valuation_components else 0.0
+
+        financial_components = []
+        if roe is not None:
+            if roe >= 15:
+                financial_components.append(0.6)
+            elif roe <= 5:
+                financial_components.append(-0.6)
+            else:
+                financial_components.append(0.0)
+
+        if roa is not None:
+            if roa >= 8:
+                financial_components.append(0.4)
+            elif roa <= 2:
+                financial_components.append(-0.4)
+
+        if de_ratio is not None:
+            if de_ratio <= 0.5:
+                financial_components.append(0.4)
+            elif de_ratio >= 1.5:
+                financial_components.append(-0.4)
+
+        if eps is not None and eps > 0:
+            financial_components.append(0.2)
+
+        financial_score = float(np.mean(financial_components)) if financial_components else 0.0
+
+        fundamental_score = float(np.clip(0.6 * valuation_score + 0.4 * financial_score, -1.0, 1.0))
+
+        if fundamental_score >= 0.25:
+            fundamental_signal = "BUY"
+        elif fundamental_score <= -0.25:
+            fundamental_signal = "SELL"
+        else:
+            fundamental_signal = "HOLD"
+
+        confidence_components = [abs(valuation_score), abs(financial_score)]
+        if eps is not None and eps > 0:
+            confidence_components.append(0.2)
+        if de_ratio is not None:
+            confidence_components.append(0.2)
+
+        avg_component = np.mean(confidence_components) if confidence_components else 0.0
+        fundamental_confidence = float(min(1.0, max(0.3, 0.4 + 0.6 * avg_component)))
+
+        fundamentals["valuation_score"] = valuation_score
+        fundamentals["financial_health_score"] = financial_score
+        fundamentals["fundamental_score"] = fundamental_score
+        fundamentals["fundamental_signal"] = fundamental_signal
+        fundamentals["fundamental_confidence"] = fundamental_confidence
+        fundamentals["valuation_components"] = valuation_components
+
         return fundamentals
 
     except Exception as e:
@@ -557,16 +620,7 @@ def _analyze_fundamentals(fund_data: Dict, symbol: str) -> Dict[str, Union[float
 
 
 def fundamental_analysis_agent(state: State) -> State:
-    """
-    Fundamental analysis agent for the LangGraph workflow.
-    Analyzes company fundamentals and valuation metrics.
-
-    Args:
-        state: Current workflow state
-
-    Returns:
-        Updated state with fundamental analysis
-    """
+    
     logging.info("Starting fundamental analysis agent")
 
     stock_data = state.get("stock_data", {})

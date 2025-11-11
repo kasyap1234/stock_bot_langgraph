@@ -9,12 +9,11 @@ from yahooquery import Ticker
 from agents.technical_analysis import HMMRegimeDetector
 import logging
 
-# Enable logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def test_hmm_regime_detector():
-    """Test HMMRegimeDetector with RELIANCE.NS data."""
+    
     symbol = "RELIANCE.NS"
     logger.info(f"Loading data for {symbol}")
     

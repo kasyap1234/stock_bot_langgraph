@@ -1,7 +1,4 @@
-"""
-Real-time market data integration module.
-Provides streaming data from multiple sources with caching and validation.
-"""
+
 
 import asyncio
 import logging
@@ -17,27 +14,24 @@ from newsapi import NewsApiClient
 from fredapi import Fred
 from bs4 import BeautifulSoup
 
-from config.config import (
+from config.api_config import (
     ALPHA_VANTAGE_API_KEY, NEWS_API_KEY, FRED_API_KEY,
     API_RATE_LIMIT_DELAY, REQUEST_TIMEOUT
 )
 from .models import StockData, create_stock_data, validate_stock_data
 from utils.scraping_utils import rate_limited_get, extract_numeric_value, safe_extract_text
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# Cache for data deduplication
 _data_cache: Dict[str, Dict[str, Any]] = {}
 _cache_lock = threading.Lock()
 
-# Rate limiting
 _last_api_call = {}
 _rate_limit_lock = threading.Lock()
 
 
 def _is_rate_limited(source: str, delay: float = API_RATE_LIMIT_DELAY) -> bool:
-    """Check if API call is rate limited."""
+    
     with _rate_limit_lock:
         now = time.time()
         if source in _last_api_call:
@@ -48,7 +42,7 @@ def _is_rate_limited(source: str, delay: float = API_RATE_LIMIT_DELAY) -> bool:
 
 
 def _cache_data(symbol: str, data: Dict[str, Any], ttl: int = 300) -> None:
-    """Cache data with TTL (time to live in seconds)."""
+    
     with _cache_lock:
         _data_cache[symbol] = {
             'data': data,
@@ -58,7 +52,7 @@ def _cache_data(symbol: str, data: Dict[str, Any], ttl: int = 300) -> None:
 
 
 def _get_cached_data(symbol: str) -> Optional[Dict[str, Any]]:
-    """Get cached data if still valid."""
+    
     with _cache_lock:
         if symbol in _data_cache:
             cached = _data_cache[symbol]
@@ -70,7 +64,7 @@ def _get_cached_data(symbol: str) -> Optional[Dict[str, Any]]:
 
 
 def _validate_and_clean_data(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Validate and clean incoming data."""
+    
     # Remove outliers (price changes > 20%)
     if 'price' in data and 'previous_price' in data:
         change = abs(data['price'] - data['previous_price']) / data['previous_price']
@@ -89,7 +83,7 @@ def _validate_and_clean_data(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class RealTimeDataManager:
-    """Manager for real-time data streaming from multiple sources."""
+    
 
     def __init__(self):
         self.sources = {
@@ -104,17 +98,17 @@ class RealTimeDataManager:
         self.callbacks: List[Callable] = []
 
     def add_callback(self, callback: Callable) -> None:
-        """Add callback for data updates."""
+        
         self.callbacks.append(callback)
 
     def remove_callback(self, callback: Callable) -> None:
-        """Remove callback."""
+        
         if callback in self.callbacks:
             self.callbacks.remove(callback)
 
     async def start_streaming(self, symbols: List[str], sources: List[str] = None,
                             interval: int = 60) -> None:
-        """Start real-time streaming for given symbols with fallback support."""
+        
         if sources is None:
             sources = ['yahoo', 'alpha_vantage']
 
@@ -128,7 +122,7 @@ class RealTimeDataManager:
                 logger.info(f"Started streaming {symbol} with fallback support")
 
     async def stop_streaming(self, symbols: List[str] = None) -> None:
-        """Stop streaming."""
+        
         if symbols is None:
             tasks_to_cancel = list(self.active_streams.values())
             self.active_streams.clear()
@@ -148,7 +142,7 @@ class RealTimeDataManager:
 
     async def _get_data_with_fallback(self, symbol: str, primary_source: str,
                                      fallback_sources: List[str] = None) -> Dict[str, Any]:
-        """Get data with fallback to other sources if primary fails."""
+        
         if fallback_sources is None:
             fallback_sources = ['yahoo', 'alpha_vantage', 'moneycontrol', 'bse']
 
@@ -177,7 +171,7 @@ class RealTimeDataManager:
         return {"symbol": symbol, "error": "All data sources failed"}
 
     async def _stream_with_fallback(self, symbol: str, sources: List[str], interval: int) -> None:
-        """Stream data with fallback mechanisms."""
+        
         while True:
             try:
                 # Try to get data from highest priority source with fallbacks
@@ -203,7 +197,7 @@ class RealTimeDataManager:
                 await asyncio.sleep(interval * 2)  # Back off on error
 
     async def _yahoo_realtime(self, symbol: str) -> Dict[str, Any]:
-        """Get real-time data from Yahoo Finance."""
+        
         try:
             from yahooquery import Ticker
             ticker = Ticker(symbol)
@@ -228,7 +222,7 @@ class RealTimeDataManager:
             return {}
 
     async def _alpha_vantage_realtime(self, symbol: str) -> Dict[str, Any]:
-        """Get real-time data from Alpha Vantage."""
+        
         if not ALPHA_VANTAGE_API_KEY:
             return {}
 
@@ -254,7 +248,7 @@ class RealTimeDataManager:
             return {}
 
     async def _newsapi_realtime(self, symbol: str) -> Dict[str, Any]:
-        """Get real-time news from NewsAPI."""
+        
         if not NEWS_API_KEY:
             return {}
 
@@ -288,7 +282,7 @@ class RealTimeDataManager:
             return {}
 
     async def _fred_realtime(self, symbol: str) -> Dict[str, Any]:
-        """Get macroeconomic data from FRED."""
+        
         if not FRED_API_KEY:
             return {}
 
@@ -322,12 +316,12 @@ class RealTimeDataManager:
             return {}
 
     async def _moneycontrol_scrape(self, symbol: str) -> Dict[str, Any]:
-        """Scrape real-time data from Moneycontrol."""
+        
         try:
             base_symbol = symbol.split('.')[0]
             url = f"https://www.moneycontrol.com/india/stockpricequote/{base_symbol}"
 
-            response = await asyncio.get_event_loop().run_in_executor(
+            response = await asyncio.get_running_loop().run_in_executor(
                 None, rate_limited_get, url
             )
 
@@ -355,12 +349,12 @@ class RealTimeDataManager:
         return {}
 
     async def _bse_scrape(self, symbol: str) -> Dict[str, Any]:
-        """Scrape real-time data from BSE India."""
+        
         try:
             base_symbol = symbol.split('.')[0]
             url = f"https://www.bseindia.com/stock-share-price/{base_symbol}"
 
-            response = await asyncio.get_event_loop().run_in_executor(
+            response = await asyncio.get_running_loop().run_in_executor(
                 None, rate_limited_get, url
             )
 
@@ -388,19 +382,9 @@ class RealTimeDataManager:
         return {}
 
 
-# Global instance
 real_time_manager = RealTimeDataManager()
 async def get_real_time_data(symbols: List[str]) -> Dict[str, Any]:
-    """
-    Get real-time data for given symbols.
-    This is a convenience function for external use.
-
-    Args:
-        symbols: List of stock symbols
-
-    Returns:
-        Dictionary with real-time data for each symbol
-    """
+    
     data = {}
     for symbol in symbols:
         # Try to get cached data first

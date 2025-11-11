@@ -1,7 +1,4 @@
-"""
-Advanced web scraping utilities for stock data extraction.
-Provides anti-detection measures, robust error handling, and multiple fallback strategies.
-"""
+
 
 import time
 import random
@@ -13,10 +10,8 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# Enhanced user agents with realistic browser fingerprints
 ENHANCED_USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -32,21 +27,20 @@ ENHANCED_USER_AGENTS = [
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
 ]
 
-# Session for connection reuse
 session = requests.Session()
 
 def get_random_user_agent() -> str:
-    """Get a random user agent from the enhanced list."""
+    
     return random.choice(ENHANCED_USER_AGENTS)
 
 def add_request_delay(base_delay: float = 1.0) -> None:
-    """Add randomized delay between requests to avoid rate limiting."""
+    
     delay = base_delay + random.uniform(0.5, 2.0)
     logger.debug(f"Adding delay: {delay:.2f}s")
     time.sleep(delay)
 
 def create_realistic_headers(user_agent: str, referer: Optional[str] = None) -> Dict[str, str]:
-    """Create comprehensive headers that mimic real browser requests."""
+    
     headers = {
         'User-Agent': user_agent,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
@@ -68,18 +62,7 @@ def create_realistic_headers(user_agent: str, referer: Optional[str] = None) -> 
     return headers
 
 def rate_limited_get(url: str, timeout: int = 30, retries: int = 3, base_delay: float = 1.0) -> Optional[requests.Response]:
-    """
-    Make a rate-limited GET request with enhanced anti-detection measures.
-
-    Args:
-        url: URL to request
-        timeout: Request timeout in seconds
-        retries: Number of retries on failure
-        base_delay: Base delay between requests
-
-    Returns:
-        Response object or None if failed
-    """
+    
     for attempt in range(retries + 1):
         # Get fresh user agent for each attempt
         user_agent = get_random_user_agent()
@@ -137,16 +120,7 @@ def rate_limited_get(url: str, timeout: int = 30, retries: int = 3, base_delay: 
     return None
 
 def extract_numeric_value(text: str, default: Optional[float] = None) -> Optional[float]:
-    """
-    Extract numeric value from text using robust regex patterns.
-
-    Args:
-        text: Text to extract number from
-        default: Default value if extraction fails
-
-    Returns:
-        Extracted numeric value or default
-    """
+    
     if not text or not isinstance(text, str):
         return default
 
@@ -174,17 +148,7 @@ def extract_numeric_value(text: str, default: Optional[float] = None) -> Optiona
     return default
 
 def safe_extract_text(element, selectors: List[str], default: str = "") -> str:
-    """
-    Safely extract text from an element using multiple selector strategies.
-
-    Args:
-        element: BeautifulSoup element
-        selectors: List of CSS selectors to try
-        default: Default value if extraction fails
-
-    Returns:
-        Extracted text or default
-    """
+    
     if not element:
         return default
 
@@ -220,16 +184,7 @@ def safe_extract_text(element, selectors: List[str], default: str = "") -> str:
     return default
 
 def find_element_by_multiple_selectors(soup: BeautifulSoup, selectors: List[str]) -> Optional[Any]:
-    """
-    Find an element using multiple selector strategies.
-
-    Args:
-        soup: BeautifulSoup object
-        selectors: List of CSS selectors to try
-
-    Returns:
-        Found element or None
-    """
+    
     for selector in selectors:
         try:
             if selector.startswith('.'):
@@ -252,12 +207,7 @@ def find_element_by_multiple_selectors(soup: BeautifulSoup, selectors: List[str]
     return None
 
 def create_fallback_data_structure() -> Dict[str, Any]:
-    """
-    Create a standard fallback data structure for when scraping fails.
-
-    Returns:
-        Dictionary with None values for all expected fields
-    """
+    
     return {
         'PERatio': None,
         'EPS': None,

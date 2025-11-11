@@ -1,7 +1,4 @@
-"""
-Risk assessment agent for stock portfolio analysis.
-Calculates risk metrics including volatility, drawdown, Sharpe ratio, and portfolio optimization.
-"""
+
 
 import logging
 from typing import Dict, Union, List, Optional, Tuple
@@ -16,20 +13,19 @@ except Exception:
     optimize = None
     logging.warning("SciPy optimize not available, using equal weights for portfolio")
 
-from config.config import (
+from config.trading_config import (
     RISK_TOLERANCE, MAX_POSITIONS, MAX_PORTFOLIO_DRAWDOWN, MAX_DAILY_LOSS,
     MAX_POSITION_SIZE_PCT, MAX_SECTOR_EXPOSURE, KELLY_FRACTION, RISK_FREE_RATE,
     ATR_PERIOD, TRAILING_STOP_PCT, TIME_EXIT_DAYS, PROFIT_TARGET_LEVELS
 )
 from data.models import State
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class RiskConfig:
-    """Configuration for risk management parameters."""
+    
     max_portfolio_drawdown: float = MAX_PORTFOLIO_DRAWDOWN
     max_daily_loss: float = MAX_DAILY_LOSS
     max_position_size: float = MAX_POSITION_SIZE_PCT
@@ -47,17 +43,7 @@ class RiskConfig:
 
 
 def calculate_kelly_criterion(expected_return: float, volatility: float, risk_free_rate: float = 0.065) -> float:
-    """
-    Calculate Kelly Criterion for optimal position sizing.
-
-    Args:
-        expected_return: Expected annual return
-        volatility: Annualized volatility
-        risk_free_rate: Risk-free rate
-
-    Returns:
-        Kelly fraction (0-1)
-    """
+    
     if volatility <= 0:
         return 0.0
 
@@ -71,17 +57,7 @@ def calculate_kelly_criterion(expected_return: float, volatility: float, risk_fr
 
 
 def calculate_atr_stop_loss(df: pd.DataFrame, atr_period: int = 14, multiplier: float = 2.0) -> float:
-    """
-    Calculate dynamic stop-loss based on Average True Range (ATR).
-
-    Args:
-        df: DataFrame with OHLC data
-        atr_period: Period for ATR calculation
-        multiplier: ATR multiplier for stop distance
-
-    Returns:
-        Stop-loss price
-    """
+    
     try:
         if len(df) < atr_period + 1:
             return 0.0
@@ -124,16 +100,7 @@ def calculate_atr_stop_loss(df: pd.DataFrame, atr_period: int = 14, multiplier: 
 
 
 def calculate_risk_parity_weights(volatilities: np.ndarray, correlations: np.ndarray) -> np.ndarray:
-    """
-    Calculate risk parity portfolio weights.
-
-    Args:
-        volatilities: Array of asset volatilities
-        correlations: Correlation matrix
-
-    Returns:
-        Array of portfolio weights
-    """
+    
     try:
         n_assets = len(volatilities)
         if n_assets == 0:
@@ -157,18 +124,9 @@ def calculate_risk_parity_weights(volatilities: np.ndarray, correlations: np.nda
 
 
 def risk_assessment_agent(state: State) -> State:
-    """
-    Risk assessment agent for the LangGraph workflow.
-    Calculates portfolio and individual asset risk metrics.
-
-    Args:
-        state: Current workflow state
-
-    Returns:
-        Updated state with risk metrics
-    """
-    logging.info("Starting risk assessment agent")
-
+    """RiskActor: Perform risk assessment."""
+    logger.info("RiskActor started")
+    
     stock_data = state.get("stock_data", {})
     risk_metrics = {}
 
@@ -178,7 +136,7 @@ def risk_assessment_agent(state: State) -> State:
         try:
             individual_risk = _calculate_individual_risk_metrics(symbol, df)
             risk_metrics[symbol] = individual_risk
-            logger.info(f"Calculated risk metrics for {symbol}")
+            logger.info(f"RiskActor processed {symbol}")
 
         except Exception as e:
             logger.error(f"Error in risk assessment for {symbol}: {e}")
@@ -192,26 +150,19 @@ def risk_assessment_agent(state: State) -> State:
         except Exception as e:
             logger.error(f"Error calculating portfolio risk: {e}")
 
+    logger.info(f"RiskActor completed for {len(symbols)} symbols")
     state["risk_metrics"] = risk_metrics
     return state
 
 
 def _calculate_individual_risk_metrics(symbol: str, df: pd.DataFrame) -> Dict[str, Union[float, bool]]:
-    """
-    Calculate individual stock risk metrics.
     
-    Args:
-        symbol: Stock symbol
-        df: DataFrame with stock data
-    
-    Returns:
-        Dictionary of risk metrics
-    """
     try:
         logger.info(f"Individual risk input columns: {df.columns.tolist()}")
         if 'close' in df.columns:
             df = df.rename(columns={'close': 'Close'})
-            logger.info(f"Renamed columns for individual risk: {df.columns.tolist()}")
+        df = df.rename(columns={'high': 'High', 'low': 'Low', 'open': 'Open'})
+        logger.info(f"Renamed columns for individual risk: {df.columns.tolist()}")
         # Daily returns
         daily_returns = df['Close'].pct_change().dropna().values
 
@@ -279,16 +230,7 @@ def _calculate_individual_risk_metrics(symbol: str, df: pd.DataFrame) -> Dict[st
 
 
 def _calculate_portfolio_risk_metrics(stock_data: Dict, risk_metrics: Dict) -> Dict[str, Dict]:
-    """
-    Calculate portfolio-level risk metrics and optimal weights.
-
-    Args:
-        stock_data: Dictionary of stock dataframes
-        risk_metrics: Dictionary of individual risk metrics
-
-    Returns:
-        Dictionary of portfolio-level metrics
-    """
+    
     try:
         symbols = list(stock_data.keys())
 
@@ -300,7 +242,8 @@ def _calculate_portfolio_risk_metrics(stock_data: Dict, risk_metrics: Dict) -> D
             logger.info(f"Portfolio risk input columns for {symbol}: {df.columns.tolist()}")
             if 'close' in df.columns:
                 df = df.rename(columns={'close': 'Close'})
-                logger.info(f"Renamed columns for portfolio risk {symbol}: {df.columns.tolist()}")
+            df = df.rename(columns={'high': 'High', 'low': 'Low', 'open': 'Open'})
+            logger.info(f"Renamed columns for portfolio risk {symbol}: {df.columns.tolist()}")
             daily_returns = df['Close'].pct_change().dropna().values
             returns_list.append(daily_returns)
 
@@ -404,16 +347,7 @@ def _calculate_portfolio_risk_metrics(stock_data: Dict, risk_metrics: Dict) -> D
 
 
 def _calculate_diversification_benefit(returns_matrix: np.ndarray, weights: np.ndarray) -> float:
-    """
-    Calculate the diversification benefit of the portfolio.
     
-    Args:
-        returns_matrix: Matrix of asset returns
-        weights: Portfolio weights
-    
-    Returns:
-        Diversification benefit ratio
-    """
     try:
         # Weighted average of individual volatilities
         individual_vols = [np.std(returns_matrix[i]) for i in range(len(weights))]
@@ -434,15 +368,7 @@ def _calculate_diversification_benefit(returns_matrix: np.ndarray, weights: np.n
 
 
 def _get_implied_volatility(symbol: str) -> Optional[float]:
-    """
-    Fetch implied volatility from options data using yahooquery.
-
-    Args:
-        symbol: Stock symbol
-
-    Returns:
-        Average implied volatility or None if unavailable
-    """
+    
     try:
         from yahooquery import Ticker
         ticker = Ticker(symbol)

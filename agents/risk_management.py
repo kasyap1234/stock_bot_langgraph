@@ -1,8 +1,4 @@
-"""
-Advanced Risk Management Module
-Implements comprehensive risk controls including stop losses, trailing stops,
-profit targets, portfolio limits, and market risk assessment.
-"""
+
 
 import logging
 from typing import Dict, List, Optional, Tuple, Union
@@ -12,19 +8,18 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 
-from config.config import (
+from config.trading_config import (
     RISK_TOLERANCE, MAX_POSITIONS, MAX_PORTFOLIO_DRAWDOWN, MAX_DAILY_LOSS,
     MAX_POSITION_SIZE_PCT, MAX_SECTOR_EXPOSURE, KELLY_FRACTION, RISK_FREE_RATE,
     ATR_PERIOD, TRAILING_STOP_PCT, TIME_EXIT_DAYS, PROFIT_TARGET_LEVELS
 )
 from data.models import State
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 
 class RiskLevel(Enum):
-    """Risk level enumeration."""
+    
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -32,7 +27,7 @@ class RiskLevel(Enum):
 
 
 class PositionStatus(Enum):
-    """Position status enumeration."""
+    
     OPEN = "open"
     CLOSED = "closed"
     STOPPED = "stopped"
@@ -42,7 +37,7 @@ class PositionStatus(Enum):
 
 @dataclass
 class Position:
-    """Represents a trading position with risk management."""
+    
     symbol: str
     entry_price: float
     quantity: int
@@ -59,12 +54,12 @@ class Position:
 
     @property
     def current_value(self) -> float:
-        """Calculate current position value."""
+        
         return self.quantity * self.entry_price
 
     @property
     def unrealized_pnl(self) -> float:
-        """Calculate unrealized P&L."""
+        
         if self.exit_price:
             if self.position_type == 'long':
                 return (self.exit_price - self.entry_price) * self.quantity
@@ -74,14 +69,14 @@ class Position:
 
     @property
     def holding_period(self) -> timedelta:
-        """Calculate current holding period."""
+        
         end_time = self.exit_time if self.exit_time else datetime.now()
         return end_time - self.entry_time
 
 
 @dataclass
 class PortfolioRiskState:
-    """Current portfolio risk state."""
+    
     total_value: float
     cash: float
     positions: Dict[str, Position]
@@ -93,13 +88,13 @@ class PortfolioRiskState:
 
     @property
     def total_exposure(self) -> float:
-        """Calculate total portfolio exposure."""
+        
         position_value = sum(pos.current_value for pos in self.positions.values())
         return position_value / self.total_value if self.total_value > 0 else 0.0
 
     @property
     def concentration_risk(self) -> Dict[str, float]:
-        """Calculate position concentration risk."""
+        
         concentrations = {}
         for symbol, position in self.positions.items():
             concentrations[symbol] = position.current_value / self.total_value
@@ -107,9 +102,7 @@ class PortfolioRiskState:
 
 
 class RiskManager:
-    """
-    Comprehensive risk management system for automated trading.
-    """
+    
 
     def __init__(self, config: Optional['RiskConfig'] = None):
         self.config = config or RiskConfig()
@@ -134,21 +127,7 @@ class RiskManager:
         trailing_stop_pct: Optional[float] = None,
         profit_targets: Optional[List[Tuple[float, float]]] = None
     ) -> bool:
-        """
-        Open a new position with risk management.
-
-        Args:
-            symbol: Stock symbol
-            entry_price: Entry price
-            quantity: Position quantity
-            position_type: 'long' or 'short'
-            stop_loss: Fixed stop-loss price
-            trailing_stop_pct: Trailing stop percentage
-            profit_targets: List of (price, percentage) tuples for scaling out
-
-        Returns:
-            True if position opened successfully, False otherwise
-        """
+        
         try:
             # Check portfolio risk limits
             if not self._check_portfolio_limits(symbol, entry_price, quantity):
@@ -192,15 +171,7 @@ class RiskManager:
             return False
 
     def update_positions(self, current_prices: Dict[str, float]) -> List[Dict]:
-        """
-        Update all positions and check for exits.
-
-        Args:
-            current_prices: Dictionary of current prices by symbol
-
-        Returns:
-            List of position updates/exits
-        """
+        
         updates = []
 
         for symbol, position in list(self.portfolio_state.positions.items()):
@@ -234,7 +205,7 @@ class RiskManager:
         return updates
 
     def _calculate_dynamic_stop_loss(self, symbol: str, entry_price: float, position_type: str) -> float:
-        """Calculate dynamic stop-loss based on ATR."""
+        
         # This would need historical data - for now use percentage-based
         if position_type == 'long':
             return entry_price * (1 - self.config.atr_period * 0.01)  # Rough ATR approximation
@@ -242,7 +213,7 @@ class RiskManager:
             return entry_price * (1 + self.config.atr_period * 0.01)
 
     def _calculate_profit_targets(self, entry_price: float, position_type: str) -> List[Tuple[float, float]]:
-        """Calculate profit targets for scaling out."""
+        
         targets = []
         for target_pct in self.config.profit_target_levels:
             if position_type == 'long':
@@ -253,7 +224,7 @@ class RiskManager:
         return targets
 
     def _update_trailing_stop(self, position: Position, current_price: float) -> float:
-        """Update trailing stop based on current price."""
+        
         if position.position_type == 'long':
             # For long positions, trail below the highest price
             new_stop = current_price * (1 - self.config.trailing_stop_pct)
@@ -264,7 +235,7 @@ class RiskManager:
             return min(position.trailing_stop, new_stop) if position.trailing_stop else new_stop
 
     def _check_exit_conditions(self, position: Position, current_price: float) -> Optional[Dict]:
-        """Check if position should be exited."""
+        
         # Check stop-loss
         if position.stop_loss:
             if position.position_type == 'long' and current_price <= position.stop_loss:
@@ -293,7 +264,7 @@ class RiskManager:
         return None
 
     def _close_position(self, position: Position, exit_price: float, reason: str):
-        """Close a position."""
+        
         position.status = PositionStatus(reason.split('_')[0].upper()) if '_' in reason else PositionStatus.CLOSED
         position.exit_price = exit_price
         position.exit_time = datetime.now()
@@ -305,7 +276,7 @@ class RiskManager:
         self.logger.info(f"Closed {position.symbol} position: {reason} @ {exit_price}")
 
     def _check_portfolio_limits(self, symbol: str, price: float, quantity: int) -> bool:
-        """Check if opening position violates portfolio limits."""
+        
         position_value = price * quantity
         new_total_value = self.portfolio_state.total_value - position_value
 
@@ -322,7 +293,7 @@ class RiskManager:
         return True
 
     def _check_portfolio_risk_limits(self):
-        """Check portfolio-level risk limits."""
+        
         # Check daily loss limit
         if self.portfolio_state.daily_pnl < -self.config.max_daily_loss:
             self.portfolio_state.portfolio_stop_triggered = True
@@ -336,19 +307,19 @@ class RiskManager:
             self._add_risk_alert("Maximum drawdown exceeded", RiskLevel.EXTREME)
 
     def _close_all_positions(self, reason: str):
-        """Close all open positions."""
+        
         for position in self.portfolio_state.positions.values():
             if position.status == PositionStatus.OPEN:
                 # Assume market order at current price (would need actual prices in real implementation)
                 self._close_position(position, position.entry_price, reason)
 
     def _calculate_total_value(self) -> float:
-        """Calculate total portfolio value."""
+        
         position_value = sum(pos.current_value for pos in self.portfolio_state.positions.values())
         return self.portfolio_state.cash + position_value
 
     def _add_risk_alert(self, message: str, level: RiskLevel):
-        """Add a risk alert."""
+        
         alert = {
             'timestamp': datetime.now(),
             'message': message,
@@ -359,7 +330,7 @@ class RiskManager:
         self.logger.warning(f"Risk Alert [{level.value}]: {message}")
 
     def get_risk_metrics(self) -> Dict:
-        """Get current risk metrics."""
+        
         return {
             'portfolio_value': self.portfolio_state.total_value,
             'cash': self.portfolio_state.cash,
@@ -373,5 +344,4 @@ class RiskManager:
         }
 
 
-# Import RiskConfig from risk_assessment
 from .risk_assessment import RiskConfig

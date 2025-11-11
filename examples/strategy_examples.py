@@ -1,7 +1,4 @@
-"""
-Examples demonstrating how to use the automated trading strategies framework.
-This script shows how to create, configure, and run different trading strategies.
-"""
+
 
 import pandas as pd
 import numpy as np
@@ -14,13 +11,12 @@ from simulation.trading_strategies import (
 from simulation.backtesting_engine import BacktestingEngine
 from data.models import State
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 def create_sample_data(symbol: str = "RELIANCE.NS", days: int = 252) -> pd.DataFrame:
-    """Create sample stock data for demonstration."""
+    
     np.random.seed(42)
 
     # Generate realistic price data
@@ -56,7 +52,7 @@ def create_sample_data(symbol: str = "RELIANCE.NS", days: int = 252) -> pd.DataF
 
 
 def example_trend_following_strategy():
-    """Example: Using Trend Following Strategy."""
+    
     print("\n" + "="*50)
     print("TREND FOLLOWING STRATEGY EXAMPLE")
     print("="*50)
@@ -94,7 +90,7 @@ Backtest Results:")
 
 
 def example_mean_reversion_strategy():
-    """Example: Using Mean Reversion Strategy."""
+    
     print("\n" + "="*50)
     print("MEAN REVERSION STRATEGY EXAMPLE")
     print("="*50)
@@ -149,7 +145,7 @@ Backtest Results:")
 
 
 def example_ensemble_strategy():
-    """Example: Using Ensemble Strategy."""
+    
     print("\n" + "="*50)
     print("ENSEMBLE STRATEGY EXAMPLE")
     print("="*50)
@@ -205,7 +201,7 @@ Backtest Results:")
 
 
 def example_sentiment_driven_strategy():
-    """Example: Using Sentiment-Driven Strategy."""
+    
     print("\n" + "="*50)
     print("SENTIMENT-DRIVEN STRATEGY EXAMPLE")
     print("="*50)
@@ -255,7 +251,7 @@ Backtest Results:")
 
 
 def example_custom_strategy_configuration():
-    """Example: Creating Custom Strategy Configuration."""
+    
     print("\n" + "="*50)
     print("CUSTOM STRATEGY CONFIGURATION EXAMPLE")
     print("="*50)
@@ -316,7 +312,7 @@ Custom Strategy Results:")
 
 
 def compare_strategies():
-    """Example: Comparing Multiple Strategies."""
+    
     print("\n" + "="*50)
     print("STRATEGY COMPARISON EXAMPLE")
     print("="*50)
@@ -370,7 +366,7 @@ STRATEGY COMPARISON SUMMARY:")
 
 
 def main():
-    """Run all strategy examples."""
+    
     print("AUTOMATED TRADING STRATEGIES FRAMEWORK EXAMPLES")
     print("=" * 60)
 

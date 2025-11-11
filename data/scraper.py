@@ -1,24 +1,30 @@
-"""
-Web scraping functions for stock news from Indian sources.
-Supports Economic Times and other Indian news websites with ethical scraping practices.
-"""
+
 
 import time
 import logging
 import random
+import re
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 
 import requests
 from bs4 import BeautifulSoup
+import warnings
+from bs4 import XMLParsedAsHTMLWarning
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 from urllib.parse import urljoin, urlparse
+from dateutil import parser as date_parser
 
 from .models import NewsData, NewsItem, create_news_item
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# User agents for ethical scraping - enhanced with more realistic and mobile agents
+class ScrapingError(Exception):
+    pass
+
+class ValidationError(Exception):
+    pass
+
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -32,32 +38,91 @@ USER_AGENTS = [
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 ]
 
-# Rate limiting constants
 REQUEST_DELAY = 2  # seconds between requests
 BATCH_DELAY = 10    # seconds between batches
 MAX_REQUESTS_PER_BATCH = 5
 
-# Session for connection reuse
 session = requests.Session()
 
 
+def parse_date(date_text: str) -> str:
+    if not date_text or not date_text.strip():
+        return datetime.now().strftime("%Y-%m-%d")
+    date_text = date_text.strip()
+    try:
+        parsed = date_parser.parse(date_text, fuzzy=True)
+        return parsed.strftime("%Y-%m-%d")
+    except Exception:
+        # Fallback: try to extract date-like string
+        date_match = re.search(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}', date_text)
+        if date_match:
+            try:
+                return date_parser.parse(date_match.group()).strftime("%Y-%m-%d")
+            except:
+                pass
+        # Another fallback: if starts with digits, take first 10
+        if date_text[0].isdigit() and len(date_text) >= 10:
+            return date_text[:10]
+        return datetime.now().strftime("%Y-%m-%d")
+
+
+def validate_news_item(title: str, url: str) -> None:
+    if not title or len(title.strip()) < 5:
+        raise ValidationError(f"Title too short or empty: '{title}'")
+    if not url or not url.startswith('http'):
+        raise ValidationError(f"Invalid URL: '{url}'")
+    # Check if URL is valid
+    try:
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            raise ValidationError(f"Malformed URL: '{url}'")
+    except Exception as e:
+        raise ValidationError(f"URL validation error: {e}")
+
+
+def get_article_snippet(url: str) -> str:
+    try:
+        response = _rate_limited_get(url, timeout=10)  # Shorter timeout for snippets
+        if not response:
+            return ""
+        soup = BeautifulSoup(response.content, 'html.parser')
+        # Remove scripts and styles
+        for script in soup(["script", "style"]):
+            script.decompose()
+        # Common content selectors
+        selectors = [
+            'div.article-content',
+            'div.content',
+            'article',
+            'div.story-body',
+            'div.main-content',
+            'div.article-body',
+            'p'  # Fallback to first p
+        ]
+        for selector in selectors:
+            element = soup.select_one(selector)
+            if element:
+                text = element.get_text(separator=' ', strip=True)
+                if len(text) > 50:  # Ensure some content
+                    return text[:300] + "..." if len(text) > 300 else text
+        # Fallback: get all p tags
+        paragraphs = soup.find_all('p')
+        if paragraphs:
+            text = ' '.join(p.get_text(strip=True) for p in paragraphs[:3])
+            return text[:300] + "..." if len(text) > 300 else text
+        return ""
+    except Exception as e:
+        logger.warning(f"Failed to extract snippet from {url}: {e}")
+        return ""
+
+
 def _get_random_user_agent() -> str:
-    """Get a random user agent for requests."""
+    
     return random.choice(USER_AGENTS)
 
 
 def _rate_limited_get(url: str, timeout: int = 30, retries: int = 3) -> Optional[requests.Response]:
-    """
-    Make a rate-limited GET request with retries, proper headers, and user agent rotation.
-
-    Args:
-        url: URL to request
-        timeout: Request timeout in seconds
-        retries: Number of retries on failure
-
-    Returns:
-        Response object or None if failed
-    """
+    
     # Try different user agents on retries to avoid blocks
     for attempt in range(retries + 1):
         # Get a fresh user agent for each attempt
@@ -118,16 +183,7 @@ def _rate_limited_get(url: str, timeout: int = 30, retries: int = 3) -> Optional
 
 
 def scrape_moneycontrol_news(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Scrape news articles from Moneycontrol for a given stock symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
@@ -148,7 +204,12 @@ def scrape_moneycontrol_news(symbol: str, max_articles: int = 10) -> NewsData:
     soup = BeautifulSoup(response.content, 'html.parser')
 
     # Find news articles
-    articles = soup.find_all('li', class_='clearfix') + soup.find_all('div', class_='MT15')
+    articles = (
+        soup.find_all('li', class_='clearfix') +
+        soup.find_all('div', class_='MT15') +
+        soup.find_all('article') +
+        soup.find_all('div', class_=re.compile(r'article|news|story', re.I))
+    )
 
     for article in articles[:max_articles]:
         try:
@@ -160,29 +221,32 @@ def scrape_moneycontrol_news(symbol: str, max_articles: int = 10) -> NewsData:
             title = link_elem.get_text(strip=True)
             url = link_elem.get('href')
 
-            if not url or not title:
+            if not url:
                 continue
 
             # Ensure absolute URL
             if not url.startswith('http'):
                 url = urljoin('https://www.moneycontrol.com', url)
 
-            # Extract date if available
-            date_elem = article.find('span', class_='date') or article.find('em')
-            published_date = datetime.now().strftime("%Y-%m-%d")
+            try:
+                validate_news_item(title, url)
+            except ValidationError as e:
+                logger.warning(f"Validation failed for Moneycontrol: {e}")
+                continue
 
-            if date_elem:
-                date_text = date_elem.get_text(strip=True)
-                try:
-                    published_date = date_text[:10]
-                except:
-                    pass
+            # Extract date if available
+            date_elem = article.find('span', class_='date') or article.find('em') or article.find('time') or article.find('span', class_=re.compile(r'date', re.I))
+            date_text = date_elem.get_text(strip=True) if date_elem else ""
+            published_date = parse_date(date_text)
+
+            snippet = get_article_snippet(url)
 
             news_item = create_news_item(
                 title=title,
                 url=url,
                 published_date=published_date,
-                source="Moneycontrol"
+                source="Moneycontrol",
+                summary=snippet
             )
             news_data.append(news_item)
             articles_found += 1
@@ -190,6 +254,8 @@ def scrape_moneycontrol_news(symbol: str, max_articles: int = 10) -> NewsData:
             if articles_found >= max_articles:
                 break
 
+        except ValidationError:
+            continue
         except Exception as e:
             logger.warning(f"Error parsing Moneycontrol article: {e}")
             continue
@@ -198,16 +264,7 @@ def scrape_moneycontrol_news(symbol: str, max_articles: int = 10) -> NewsData:
 
 
 def scrape_business_standard_news(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Scrape news articles from Business Standard for a given stock symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
@@ -228,7 +285,11 @@ def scrape_business_standard_news(symbol: str, max_articles: int = 10) -> NewsDa
     soup = BeautifulSoup(response.content, 'html.parser')
 
     # Find news articles
-    articles = soup.find_all('div', class_='listing') + soup.find_all('article')
+    articles = (
+        soup.find_all('div', class_='listing') +
+        soup.find_all('article') +
+        soup.find_all('div', class_=re.compile(r'article|news|story', re.I))
+    )
 
     for article in articles[:max_articles]:
         try:
@@ -240,29 +301,32 @@ def scrape_business_standard_news(symbol: str, max_articles: int = 10) -> NewsDa
             title = link_elem.get_text(strip=True)
             url = link_elem.get('href')
 
-            if not url or not title:
+            if not url:
                 continue
 
             # Ensure absolute URL
             if not url.startswith('http'):
                 url = urljoin('https://www.business-standard.com', url)
 
-            # Extract date if available
-            date_elem = article.find('span', class_='date') or article.find('time')
-            published_date = datetime.now().strftime("%Y-%m-%d")
+            try:
+                validate_news_item(title, url)
+            except ValidationError as e:
+                logger.warning(f"Validation failed for Business Standard: {e}")
+                continue
 
-            if date_elem:
-                date_text = date_elem.get_text(strip=True)
-                try:
-                    published_date = date_text[:10]
-                except:
-                    pass
+            # Extract date if available
+            date_elem = article.find('span', class_='date') or article.find('time') or article.find('span', class_=re.compile(r'date', re.I))
+            date_text = date_elem.get_text(strip=True) if date_elem else ""
+            published_date = parse_date(date_text)
+
+            snippet = get_article_snippet(url)
 
             news_item = create_news_item(
                 title=title,
                 url=url,
                 published_date=published_date,
-                source="Business Standard"
+                source="Business Standard",
+                summary=snippet
             )
             news_data.append(news_item)
             articles_found += 1
@@ -270,6 +334,8 @@ def scrape_business_standard_news(symbol: str, max_articles: int = 10) -> NewsDa
             if articles_found >= max_articles:
                 break
 
+        except ValidationError:
+            continue
         except Exception as e:
             logger.warning(f"Error parsing Business Standard article: {e}")
             continue
@@ -278,22 +344,13 @@ def scrape_business_standard_news(symbol: str, max_articles: int = 10) -> NewsDa
 
 
 def scrape_livemint_news(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Scrape news articles from Livemint for a given stock symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
 
     # Livemint search URL
-    search_url = f"https://www.livemint.com/Search/Link/Keyword/{base_symbol}"
+    search_url = f"https://www.livemint.com/search?q={base_symbol}"
 
     articles_found = 0
 
@@ -313,7 +370,11 @@ def scrape_livemint_news(symbol: str, max_articles: int = 10) -> NewsData:
     soup = BeautifulSoup(response.content, 'html.parser')
 
     # Find news articles
-    articles = soup.find_all('div', class_='headlineSec') + soup.find_all('article')
+    articles = (
+        soup.find_all('div', class_='headlineSec') +
+        soup.find_all('article') +
+        soup.find_all('div', class_=re.compile(r'article|news|story', re.I))
+    )
 
     for article in articles[:max_articles]:
         try:
@@ -325,29 +386,32 @@ def scrape_livemint_news(symbol: str, max_articles: int = 10) -> NewsData:
             title = link_elem.get_text(strip=True)
             url = link_elem.get('href')
 
-            if not url or not title:
+            if not url:
                 continue
 
             # Ensure absolute URL
             if not url.startswith('http'):
                 url = urljoin('https://www.livemint.com', url)
 
-            # Extract date if available
-            date_elem = article.find('span', class_='date') or article.find('time')
-            published_date = datetime.now().strftime("%Y-%m-%d")
+            try:
+                validate_news_item(title, url)
+            except ValidationError as e:
+                logger.warning(f"Validation failed for Livemint: {e}")
+                continue
 
-            if date_elem:
-                date_text = date_elem.get_text(strip=True)
-                try:
-                    published_date = date_text[:10]
-                except:
-                    pass
+            # Extract date if available
+            date_elem = article.find('span', class_='date') or article.find('time') or article.find('span', class_=re.compile(r'date', re.I))
+            date_text = date_elem.get_text(strip=True) if date_elem else ""
+            published_date = parse_date(date_text)
+
+            snippet = get_article_snippet(url)
 
             news_item = create_news_item(
                 title=title,
                 url=url,
                 published_date=published_date,
-                source="Livemint"
+                source="Livemint",
+                summary=snippet
             )
             news_data.append(news_item)
             articles_found += 1
@@ -355,6 +419,8 @@ def scrape_livemint_news(symbol: str, max_articles: int = 10) -> NewsData:
             if articles_found >= max_articles:
                 break
 
+        except ValidationError:
+            continue
         except Exception as e:
             logger.warning(f"Error parsing Livemint article: {e}")
             continue
@@ -363,16 +429,7 @@ def scrape_livemint_news(symbol: str, max_articles: int = 10) -> NewsData:
 
 
 def scrape_the_hindu_news(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Scrape news articles from The Hindu for a given stock symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
@@ -393,7 +450,11 @@ def scrape_the_hindu_news(symbol: str, max_articles: int = 10) -> NewsData:
     soup = BeautifulSoup(response.content, 'html.parser')
 
     # Find news articles
-    articles = soup.find_all('div', class_='story-card') + soup.find_all('article')
+    articles = (
+        soup.find_all('div', class_='story-card') +
+        soup.find_all('article') +
+        soup.find_all('div', class_=re.compile(r'article|news|story', re.I))
+    )
 
     for article in articles[:max_articles]:
         try:
@@ -405,29 +466,32 @@ def scrape_the_hindu_news(symbol: str, max_articles: int = 10) -> NewsData:
             title = link_elem.get_text(strip=True)
             url = link_elem.get('href')
 
-            if not url or not title:
+            if not url:
                 continue
 
             # Ensure absolute URL
             if not url.startswith('http'):
                 url = urljoin('https://www.thehindu.com', url)
 
-            # Extract date if available
-            date_elem = article.find('span', class_='date') or article.find('time')
-            published_date = datetime.now().strftime("%Y-%m-%d")
+            try:
+                validate_news_item(title, url)
+            except ValidationError as e:
+                logger.warning(f"Validation failed for The Hindu: {e}")
+                continue
 
-            if date_elem:
-                date_text = date_elem.get_text(strip=True)
-                try:
-                    published_date = date_text[:10]
-                except:
-                    pass
+            # Extract date if available
+            date_elem = article.find('span', class_='date') or article.find('time') or article.find('span', class_=re.compile(r'date', re.I))
+            date_text = date_elem.get_text(strip=True) if date_elem else ""
+            published_date = parse_date(date_text)
+
+            snippet = get_article_snippet(url)
 
             news_item = create_news_item(
                 title=title,
                 url=url,
                 published_date=published_date,
-                source="The Hindu"
+                source="The Hindu",
+                summary=snippet
             )
             news_data.append(news_item)
             articles_found += 1
@@ -435,6 +499,8 @@ def scrape_the_hindu_news(symbol: str, max_articles: int = 10) -> NewsData:
             if articles_found >= max_articles:
                 break
 
+        except ValidationError:
+            continue
         except Exception as e:
             logger.warning(f"Error parsing The Hindu article: {e}")
             continue
@@ -443,16 +509,7 @@ def scrape_the_hindu_news(symbol: str, max_articles: int = 10) -> NewsData:
 
 
 def scrape_financial_express_news(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Scrape news articles from Financial Express for a given stock symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
@@ -473,7 +530,11 @@ def scrape_financial_express_news(symbol: str, max_articles: int = 10) -> NewsDa
     soup = BeautifulSoup(response.content, 'html.parser')
 
     # Find news articles
-    articles = soup.find_all('div', class_='entry') + soup.find_all('article')
+    articles = (
+        soup.find_all('div', class_='entry') +
+        soup.find_all('article') +
+        soup.find_all('div', class_=re.compile(r'article|news|story', re.I))
+    )
 
     for article in articles[:max_articles]:
         try:
@@ -485,29 +546,32 @@ def scrape_financial_express_news(symbol: str, max_articles: int = 10) -> NewsDa
             title = link_elem.get_text(strip=True)
             url = link_elem.get('href')
 
-            if not url or not title:
+            if not url:
                 continue
 
             # Ensure absolute URL
             if not url.startswith('http'):
                 url = urljoin('https://www.financialexpress.com', url)
 
-            # Extract date if available
-            date_elem = article.find('span', class_='date') or article.find('time')
-            published_date = datetime.now().strftime("%Y-%m-%d")
+            try:
+                validate_news_item(title, url)
+            except ValidationError as e:
+                logger.warning(f"Validation failed for Financial Express: {e}")
+                continue
 
-            if date_elem:
-                date_text = date_elem.get_text(strip=True)
-                try:
-                    published_date = date_text[:10]
-                except:
-                    pass
+            # Extract date if available
+            date_elem = article.find('span', class_='date') or article.find('time') or article.find('span', class_=re.compile(r'date', re.I))
+            date_text = date_elem.get_text(strip=True) if date_elem else ""
+            published_date = parse_date(date_text)
+
+            snippet = get_article_snippet(url)
 
             news_item = create_news_item(
                 title=title,
                 url=url,
                 published_date=published_date,
-                source="Financial Express"
+                source="Financial Express",
+                summary=snippet
             )
             news_data.append(news_item)
             articles_found += 1
@@ -515,6 +579,8 @@ def scrape_financial_express_news(symbol: str, max_articles: int = 10) -> NewsDa
             if articles_found >= max_articles:
                 break
 
+        except ValidationError:
+            continue
         except Exception as e:
             logger.warning(f"Error parsing Financial Express article: {e}")
             continue
@@ -523,16 +589,7 @@ def scrape_financial_express_news(symbol: str, max_articles: int = 10) -> NewsDa
 
 
 def scrape_business_today_news(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Scrape news articles from Business Today for a given stock symbol.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
@@ -553,7 +610,11 @@ def scrape_business_today_news(symbol: str, max_articles: int = 10) -> NewsData:
     soup = BeautifulSoup(response.content, 'html.parser')
 
     # Find news articles
-    articles = soup.find_all('div', class_='search-result') + soup.find_all('article')
+    articles = (
+        soup.find_all('div', class_='search-result') +
+        soup.find_all('article') +
+        soup.find_all('div', class_=re.compile(r'article|news|story', re.I))
+    )
 
     for article in articles[:max_articles]:
         try:
@@ -565,29 +626,32 @@ def scrape_business_today_news(symbol: str, max_articles: int = 10) -> NewsData:
             title = link_elem.get_text(strip=True)
             url = link_elem.get('href')
 
-            if not url or not title:
+            if not url:
                 continue
 
             # Ensure absolute URL
             if not url.startswith('http'):
                 url = urljoin('https://www.businesstoday.in', url)
 
-            # Extract date if available
-            date_elem = article.find('span', class_='date') or article.find('time')
-            published_date = datetime.now().strftime("%Y-%m-%d")
+            try:
+                validate_news_item(title, url)
+            except ValidationError as e:
+                logger.warning(f"Validation failed for Business Today: {e}")
+                continue
 
-            if date_elem:
-                date_text = date_elem.get_text(strip=True)
-                try:
-                    published_date = date_text[:10]
-                except:
-                    pass
+            # Extract date if available
+            date_elem = article.find('span', class_='date') or article.find('time') or article.find('span', class_=re.compile(r'date', re.I))
+            date_text = date_elem.get_text(strip=True) if date_elem else ""
+            published_date = parse_date(date_text)
+
+            snippet = get_article_snippet(url)
 
             news_item = create_news_item(
                 title=title,
                 url=url,
                 published_date=published_date,
-                source="Business Today"
+                source="Business Today",
+                summary=snippet
             )
             news_data.append(news_item)
             articles_found += 1
@@ -595,6 +659,8 @@ def scrape_business_today_news(symbol: str, max_articles: int = 10) -> NewsData:
             if articles_found >= max_articles:
                 break
 
+        except ValidationError:
+            continue
         except Exception as e:
             logger.warning(f"Error parsing Business Today article: {e}")
             continue
@@ -603,17 +669,7 @@ def scrape_business_today_news(symbol: str, max_articles: int = 10) -> NewsData:
 
 
 def scrape_google_news_fallback(symbol: str, max_articles: int = 10) -> NewsData:
-    """
-    Fallback scraping using Google News for a given stock symbol.
-    Used when primary sources are blocked.
-
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS")
-        max_articles: Maximum number of articles to fetch
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     base_symbol = symbol.split('.')[0] if '.' in symbol else symbol
 
     news_data = []
@@ -649,28 +705,28 @@ def scrape_google_news_fallback(symbol: str, max_articles: int = 10) -> NewsData
             link_elem = item.find('link')
             url = link_elem.get_text(strip=True) if link_elem else None
 
-            if not url or not title:
+            if not url:
+                continue
+
+            try:
+                validate_news_item(title, url)
+            except ValidationError as e:
+                logger.warning(f"Validation failed for Google News: {e}")
                 continue
 
             # Extract date
             date_elem = item.find('pubdate')
-            published_date = datetime.now().strftime("%Y-%m-%d")
+            date_text = date_elem.get_text(strip=True) if date_elem else ""
+            published_date = parse_date(date_text)
 
-            if date_elem:
-                date_text = date_elem.get_text(strip=True)
-                try:
-                    # Parse RSS date format
-                    from email.utils import parsedate_to_datetime
-                    parsed_date = parsedate_to_datetime(date_text)
-                    published_date = parsed_date.strftime("%Y-%m-%d")
-                except:
-                    pass
+            snippet = get_article_snippet(url)
 
             news_item = create_news_item(
                 title=title,
                 url=url,
                 published_date=published_date,
-                source="Google News"
+                source="Google News",
+                summary=snippet
             )
             news_data.append(news_item)
             articles_found += 1
@@ -678,6 +734,8 @@ def scrape_google_news_fallback(symbol: str, max_articles: int = 10) -> NewsData
             if articles_found >= max_articles:
                 break
 
+        except ValidationError:
+            continue
         except Exception as e:
             logger.warning(f"Error parsing Google News item: {e}")
             continue
@@ -686,16 +744,7 @@ def scrape_google_news_fallback(symbol: str, max_articles: int = 10) -> NewsData
 
 
 def scrape_news(symbol: str, max_articles: int = 15) -> NewsData:
-    """
-    Scrape news from multiple Indian sources for a stock symbol.
-
-    Args:
-        symbol: Stock symbol
-        max_articles: Maximum total articles to fetch across all sources
-
-    Returns:
-        List of NewsItem dictionaries
-    """
+    
     logger.info(f"Fetching news for {symbol}")
 
     all_news = []

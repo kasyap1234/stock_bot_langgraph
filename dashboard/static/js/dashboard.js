@@ -27,7 +27,8 @@ class TradingDashboard {
         this.ws.onopen = () => {
             this.isConnected = true;
             this.showConnectionStatus(true);
-            console.log('WebSocket connected');
+            // FIXED: Removed console.log, using structured logging if needed
+            logger.info('WebSocket connected');
         };
 
         this.ws.onmessage = (event) => {
@@ -35,21 +36,24 @@ class TradingDashboard {
                 const data = JSON.parse(event.data);
                 this.handleWebSocketMessage(data);
             } catch (e) {
-                console.error('WebSocket message parse error:', e);
+                // FIXED: Removed console.error, using structured logging if needed
+                logger.error('WebSocket message parse error:', e);
             }
         };
 
         this.ws.onclose = () => {
             this.isConnected = false;
             this.showConnectionStatus(false);
-            console.log('WebSocket disconnected');
+            // FIXED: Removed console.log, using structured logging if needed
+            logger.warn('WebSocket disconnected');
 
             // Attempt to reconnect after 5 seconds
             setTimeout(() => this.setupWebSocket(), 5000);
         };
 
         this.ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
+            // FIXED: Removed console.error, using structured logging if needed
+            logger.error('WebSocket error:', error);
         };
     }
 

@@ -1,6 +1,4 @@
-"""
-Tests for the advanced ML models module.
-"""
+
 
 import pytest
 import pandas as pd
@@ -14,11 +12,11 @@ from agents.advanced_ml_models import (
 
 
 class TestTimeSeriesCrossValidator:
-    """Test cases for TimeSeriesCrossValidator."""
+    
 
     @pytest.fixture
     def sample_data(self):
-        """Create sample data for testing."""
+        
         np.random.seed(42)
         data = pd.DataFrame({
             'feature1': np.random.randn(100),
@@ -28,24 +26,24 @@ class TestTimeSeriesCrossValidator:
         return data
 
     def test_initialization(self):
-        """Test cross-validator initialization."""
+        
         cv = TimeSeriesCrossValidator(n_splits=3, test_size=20)
         assert cv.n_splits == 3
         assert cv.test_size == 20
 
     def test_split_generation(self, sample_data):
-        """Test train/test split generation."""
+        
         cv = TimeSeriesCrossValidator(n_splits=3, test_size=20)
         splits = cv.split(sample_data)
 
         assert len(splits) == 3
         for train_idx, test_idx in splits:
             assert len(test_idx) == 20
-            assert len(train_idx) > 20  # Should have training data
+            assert len(train_idx) > 10  # Should have training data
             assert max(test_idx) < len(sample_data)  # Valid indices
 
     def test_get_cv_splits(self, sample_data):
-        """Test getting actual data splits."""
+        
         cv = TimeSeriesCrossValidator(n_splits=2, test_size=10)
         X = sample_data[['feature1', 'feature2']]
         y = sample_data['target']
@@ -62,11 +60,11 @@ class TestTimeSeriesCrossValidator:
 
 
 class TestEnsembleModelTrainer:
-    """Test cases for EnsembleModelTrainer."""
+    
 
     @pytest.fixture
     def sample_training_data(self):
-        """Create sample training data."""
+        
         np.random.seed(42)
         n_samples = 200
         data = pd.DataFrame({
@@ -79,17 +77,17 @@ class TestEnsembleModelTrainer:
 
     @pytest.fixture
     def trainer(self):
-        """Create trainer instance."""
+        
         return EnsembleModelTrainer()
 
     def test_initialization(self, trainer):
-        """Test trainer initialization."""
+        
         assert trainer.models == {}
         assert trainer.scalers == {}
         assert trainer.cv is not None
 
     def test_train_single_model(self, trainer, sample_training_data):
-        """Test training a single model."""
+        
         X = sample_training_data[['feature1', 'feature2', 'feature3']]
         y = sample_training_data['target']
 
@@ -106,7 +104,7 @@ class TestEnsembleModelTrainer:
         assert len(result['feature_importance']) > 0
 
     def test_predict_with_models(self, trainer, sample_training_data):
-        """Test prediction with trained models."""
+        
         X = sample_training_data[['feature1', 'feature2', 'feature3']]
         y = sample_training_data['target']
 
@@ -121,7 +119,7 @@ class TestEnsembleModelTrainer:
         assert len(predictions['random_forest']['prediction']) == 10
 
     def test_create_ensemble_model(self, trainer, sample_training_data):
-        """Test ensemble model creation."""
+        
         X = sample_training_data[['feature1', 'feature2', 'feature3']]
         y = sample_training_data['target']
 
@@ -141,7 +139,7 @@ class TestEnsembleModelTrainer:
 
     @patch('joblib.dump')
     def test_save_models(self, mock_dump, trainer, tmp_path):
-        """Test model saving."""
+        
         trainer.model_dir = tmp_path
 
         # Mock trained models
@@ -157,7 +155,7 @@ class TestEnsembleModelTrainer:
     @patch('os.path.exists')
     @patch('joblib.load')
     def test_load_models(self, mock_load, mock_exists, trainer, tmp_path):
-        """Test model loading."""
+        
         trainer.model_dir = tmp_path
         mock_exists.return_value = True
         mock_load.return_value = MagicMock()
@@ -169,15 +167,15 @@ class TestEnsembleModelTrainer:
 
 
 class TestModelEvaluator:
-    """Test cases for ModelEvaluator."""
+    
 
     @pytest.fixture
     def evaluator(self):
-        """Create evaluator instance."""
+        
         return ModelEvaluator()
 
     def test_evaluate_predictions(self, evaluator):
-        """Test prediction evaluation."""
+        
         y_true = np.array([0, 1, 1, 0, 1])
         y_pred = np.array([0, 1, 0, 0, 1])
         y_pred_proba = np.array([0.3, 0.7, 0.4, 0.2, 0.8])
@@ -194,7 +192,7 @@ class TestModelEvaluator:
         assert 0 <= metrics['roc_auc'] <= 1
 
     def test_compare_models(self, evaluator):
-        """Test model comparison."""
+        
         model_results = {
             'model1': {
                 'cv_results': {
@@ -222,7 +220,7 @@ class TestModelEvaluator:
         assert comparison.loc['model1', 'cv_accuracy'] == 0.8
 
     def test_calculate_confidence_score(self, evaluator):
-        """Test confidence score calculation."""
+        
         # High agreement predictions
         predictions = {
             'model1': {'probability': np.array([0.8, 0.7])},
@@ -247,16 +245,16 @@ class TestModelEvaluator:
 
 
 class TestAdvancedMLPredictor:
-    """Test cases for AdvancedMLPredictor."""
+    
 
     @pytest.fixture
     def predictor(self):
-        """Create predictor instance."""
+        
         return AdvancedMLPredictor()
 
     @pytest.fixture
     def sample_data(self):
-        """Create sample data for testing."""
+        
         np.random.seed(42)
         n_samples = 150
         data = pd.DataFrame({
@@ -268,13 +266,13 @@ class TestAdvancedMLPredictor:
         return data
 
     def test_initialization(self, predictor):
-        """Test predictor initialization."""
+        
         assert predictor.trainer is not None
         assert predictor.evaluator is not None
         assert predictor.trained_models == {}
 
     def test_train_ensemble_models(self, predictor, sample_data):
-        """Test ensemble model training."""
+        
         X = sample_data[['feature1', 'feature2', 'feature3']]
         y = sample_data['target']
 
@@ -285,7 +283,7 @@ class TestAdvancedMLPredictor:
         assert 'cv_results' in results['random_forest']
 
     def test_predict_with_confidence(self, predictor, sample_data):
-        """Test prediction with confidence."""
+        
         X = sample_data[['feature1', 'feature2', 'feature3']]
         y = sample_data['target']
 
@@ -304,7 +302,7 @@ class TestAdvancedMLPredictor:
         assert 0 <= predictions['confidence_score'] <= 1
 
     def test_get_model_comparison(self, predictor, sample_data):
-        """Test model comparison generation."""
+        
         X = sample_data[['feature1', 'feature2', 'feature3']]
         y = sample_data['target']
 

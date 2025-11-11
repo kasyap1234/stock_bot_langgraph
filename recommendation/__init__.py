@@ -1,6 +1,4 @@
-"""
-Recommendation engine for stock trading decisions.
-"""
+
 
 from .final_recommendation import final_recommendation_agent, backtest_interpretation_agent
 

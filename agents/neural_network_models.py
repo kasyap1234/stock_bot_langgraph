@@ -1,8 +1,4 @@
-"""
-Neural Network Models for Advanced Stock Prediction.
-Implements CNN, RNN variants, Transformer models, and autoencoders
-for sophisticated time series analysis and anomaly detection.
-"""
+
 
 import logging
 import pandas as pd
@@ -14,6 +10,8 @@ import os
 from pathlib import Path
 
 try:
+    import warnings
+    warnings.filterwarnings("ignore", category=FutureWarning, module="tensorflow")
     import tensorflow as tf
     from tensorflow.keras.models import Sequential, Model
     from tensorflow.keras.layers import (
@@ -40,29 +38,27 @@ except ImportError:
     logging.warning("PyTorch not available")
     PYTORCH_AVAILABLE = False
 
-from config.config import LSTM_EPOCHS, LSTM_BATCH, MODEL_DIR
+from config.ml_config import LSTM_EPOCHS, LSTM_BATCH
+from config.constants import MODEL_DIR
 from data.models import State
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
+if PYTORCH_AVAILABLE:
+    class TimeSeriesDataset(Dataset):
+        def __init__(self, X: np.ndarray, y: np.ndarray):
+            self.X = torch.FloatTensor(X)
+            self.y = torch.LongTensor(y)
 
-class TimeSeriesDataset(Dataset):
-    """PyTorch Dataset for time series data."""
+        def __len__(self):
+            return len(self.X)
 
-    def __init__(self, X: np.ndarray, y: np.ndarray):
-        self.X = torch.FloatTensor(X)
-        self.y = torch.LongTensor(y)
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
+        def __getitem__(self, idx):
+            return self.X[idx], self.y[idx]
 
 
 class CNNTimeSeriesPredictor:
-    """CNN-based time series predictor for pattern recognition."""
+    
 
     def __init__(self, sequence_length: int = 60, n_features: int = 50):
         self.sequence_length = sequence_length
@@ -74,7 +70,7 @@ class CNNTimeSeriesPredictor:
             self._build_model()
 
     def _build_model(self):
-        """Build CNN model architecture."""
+        
         model = Sequential([
             Input(shape=(self.sequence_length, self.n_features)),
             Conv1D(filters=64, kernel_size=3, activation='relu', padding='same'),
@@ -108,7 +104,7 @@ class CNNTimeSeriesPredictor:
         logger.info("CNN model built")
 
     def prepare_sequences(self, X: pd.DataFrame, y: pd.Series) -> Tuple[np.ndarray, np.ndarray]:
-        """Prepare sequences for CNN training."""
+        
         from sklearn.preprocessing import StandardScaler
 
         # Scale features
@@ -125,7 +121,7 @@ class CNNTimeSeriesPredictor:
         return np.array(X_seq), np.array(y_seq)
 
     def train(self, X: pd.DataFrame, y: pd.Series, validation_split: float = 0.2) -> Dict[str, Any]:
-        """Train CNN model."""
+        
         if not TENSORFLOW_AVAILABLE or self.model is None:
             return {'error': 'TensorFlow not available'}
 
@@ -160,7 +156,7 @@ class CNNTimeSeriesPredictor:
         }
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """Make predictions with trained CNN."""
+        
         if self.model is None or self.scaler is None:
             return np.array([])
 
@@ -172,7 +168,7 @@ class CNNTimeSeriesPredictor:
 
 
 class RNNPredictor:
-    """Advanced RNN predictor with multiple architectures."""
+    
 
     def __init__(self, sequence_length: int = 60, n_features: int = 50,
                  model_type: str = 'bilstm'):
@@ -186,7 +182,7 @@ class RNNPredictor:
             self._build_model()
 
     def _build_model(self):
-        """Build RNN model based on type."""
+        
         inputs = Input(shape=(self.sequence_length, self.n_features))
 
         if self.model_type == 'lstm':
@@ -223,7 +219,7 @@ class RNNPredictor:
         logger.info(f"{self.model_type.upper()} model built")
 
     def prepare_sequences(self, X: pd.DataFrame, y: pd.Series) -> Tuple[np.ndarray, np.ndarray]:
-        """Prepare sequences for RNN training."""
+        
         from sklearn.preprocessing import StandardScaler
 
         self.scaler = StandardScaler()
@@ -238,7 +234,7 @@ class RNNPredictor:
         return np.array(X_seq), np.array(y_seq)
 
     def train(self, X: pd.DataFrame, y: pd.Series, validation_split: float = 0.2) -> Dict[str, Any]:
-        """Train RNN model."""
+        
         if not TENSORFLOW_AVAILABLE or self.model is None:
             return {'error': 'TensorFlow not available'}
 
@@ -271,7 +267,7 @@ class RNNPredictor:
         }
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """Make predictions with trained RNN."""
+        
         if self.model is None or self.scaler is None:
             return np.array([])
 
@@ -283,7 +279,7 @@ class RNNPredictor:
 
 
 class TransformerPredictor:
-    """Transformer-based time series predictor."""
+    
 
     def __init__(self, sequence_length: int = 60, n_features: int = 50,
                  num_heads: int = 8, ff_dim: int = 128, num_transformer_blocks: int = 4):
@@ -299,7 +295,7 @@ class TransformerPredictor:
             self._build_model()
 
     def _build_model(self):
-        """Build Transformer model."""
+        
         inputs = Input(shape=(self.sequence_length, self.n_features))
 
         # Positional encoding
@@ -347,7 +343,7 @@ class TransformerPredictor:
         logger.info("Transformer model built")
 
     def prepare_sequences(self, X: pd.DataFrame, y: pd.Series) -> Tuple[np.ndarray, np.ndarray]:
-        """Prepare sequences for Transformer training."""
+        
         from sklearn.preprocessing import StandardScaler
 
         self.scaler = StandardScaler()
@@ -362,7 +358,7 @@ class TransformerPredictor:
         return np.array(X_seq), np.array(y_seq)
 
     def train(self, X: pd.DataFrame, y: pd.Series, validation_split: float = 0.2) -> Dict[str, Any]:
-        """Train Transformer model."""
+        
         if not TENSORFLOW_AVAILABLE or self.model is None:
             return {'error': 'TensorFlow not available'}
 
@@ -395,7 +391,7 @@ class TransformerPredictor:
         }
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """Make predictions with trained Transformer."""
+        
         if self.model is None or self.scaler is None:
             return np.array([])
 
@@ -407,7 +403,7 @@ class TransformerPredictor:
 
 
 class AutoencoderAnomalyDetector:
-    """Autoencoder for anomaly detection in time series."""
+    
 
     def __init__(self, sequence_length: int = 60, n_features: int = 50,
                  encoding_dim: int = 32):
@@ -422,7 +418,7 @@ class AutoencoderAnomalyDetector:
             self._build_autoencoder()
 
     def _build_autoencoder(self):
-        """Build autoencoder model."""
+        
         input_layer = Input(shape=(self.sequence_length, self.n_features))
 
         # Encoder
@@ -454,7 +450,7 @@ class AutoencoderAnomalyDetector:
         logger.info("Autoencoder model built")
 
     def prepare_sequences(self, X: pd.DataFrame) -> np.ndarray:
-        """Prepare sequences for autoencoder training."""
+        
         from sklearn.preprocessing import MinMaxScaler
 
         self.scaler = MinMaxScaler()
@@ -467,7 +463,7 @@ class AutoencoderAnomalyDetector:
         return np.array(X_seq)
 
     def train(self, X: pd.DataFrame, epochs: int = 50, batch_size: int = 32) -> Dict[str, Any]:
-        """Train autoencoder for anomaly detection."""
+        
         if not TENSORFLOW_AVAILABLE or self.autoencoder is None:
             return {'error': 'TensorFlow not available'}
 
@@ -506,7 +502,7 @@ class AutoencoderAnomalyDetector:
         }
 
     def detect_anomalies(self, X: pd.DataFrame) -> Dict[str, Any]:
-        """Detect anomalies in time series data."""
+        
         if self.autoencoder is None or self.scaler is None:
             return {'error': 'Model not trained'}
 
@@ -540,7 +536,7 @@ class AutoencoderAnomalyDetector:
 
 
 class NeuralNetworkEnsemble:
-    """Ensemble of neural network models."""
+    
 
     def __init__(self, sequence_length: int = 60):
         self.sequence_length = sequence_length
@@ -554,7 +550,7 @@ class NeuralNetworkEnsemble:
         self.trained_models = {}
 
     def train_all_models(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
-        """Train all neural network models."""
+        
         results = {}
 
         for name, model in self.models.items():
@@ -574,7 +570,7 @@ class NeuralNetworkEnsemble:
         return results
 
     def predict_with_ensemble(self, X: pd.DataFrame) -> Dict[str, Any]:
-        """Make predictions with neural network ensemble."""
+        
         predictions = {}
         probabilities = []
 
@@ -615,7 +611,7 @@ class NeuralNetworkEnsemble:
         }
 
     def save_models(self, symbol: str, model_dir: str = MODEL_DIR):
-        """Save trained neural network models."""
+        
         symbol_dir = Path(model_dir) / f"nn_{symbol}"
         symbol_dir.mkdir(exist_ok=True)
 
@@ -636,7 +632,7 @@ class NeuralNetworkEnsemble:
         logger.info(f"Saved neural network models for {symbol}")
 
     def load_models(self, symbol: str, model_dir: str = MODEL_DIR) -> bool:
-        """Load trained neural network models."""
+        
         symbol_dir = Path(model_dir) / f"nn_{symbol}"
 
         if not symbol_dir.exists():
@@ -668,15 +664,7 @@ class NeuralNetworkEnsemble:
 
 
 def neural_network_agent(state: State) -> State:
-    """
-    Neural network agent for advanced time series prediction.
-
-    Args:
-        state: Current workflow state
-
-    Returns:
-        Updated state with neural network predictions
-    """
+    
     logging.info("Starting neural network agent")
 
     engineered_features = state.get("engineered_features", {})
@@ -717,9 +705,6 @@ def neural_network_agent(state: State) -> State:
                 'training_results': training_results,
                 'predictions': prediction_results
             }
-
-            # Save models
-            nn_ensemble.save_models(symbol)
 
             logger.info(f"Completed neural network training and prediction for {symbol}")
 

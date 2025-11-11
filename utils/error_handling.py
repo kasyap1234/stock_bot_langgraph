@@ -1,370 +1,159 @@
-"""
-Error handling utilities and retry mechanisms for the stock bot.
-"""
-
 import logging
 import time
-from typing import Any, Callable, Optional, Type, Union
-from functools import wraps
-import requests
+import functools
+from typing import Any, Dict, Optional, Callable
 
 logger = logging.getLogger(__name__)
 
 
 class StockBotError(Exception):
-    """Base exception class for stock bot errors."""
+    """Base exception for stock bot errors."""
     pass
 
 
 class DataFetchError(StockBotError):
-    """Raised when data fetching fails."""
+    """Exception for data fetching errors."""
     pass
 
 
 class APILimitError(StockBotError):
-    """Raised when API rate limits are exceeded."""
+    """Exception for API limit errors."""
     pass
 
 
 class ValidationError(StockBotError):
-    """Raised when data validation fails."""
+    """Exception for data validation errors."""
     pass
 
 
-def retry_with_exponential_backoff(
-    max_retries: int = 3,
-    base_delay: float = 1.0,
-    max_delay: float = 60.0,
-    backoff_factor: float = 2.0,
-    exceptions: tuple = (Exception,)
-):
-    """
-    Decorator that retries a function with exponential backoff.
+class DataFetchingError(Exception):
+    """Custom exception for data fetching failures."""
+    def __init__(self, message, source=None):
+        self.message = message
+        self.source = source
+        super().__init__(f"[{self.source}] {self.message}" if self.source else self.message)
 
-    Args:
-        max_retries: Maximum number of retry attempts
-        base_delay: Initial delay in seconds
-        max_delay: Maximum delay between retries
-        backoff_factor: Multiplication factor for delay
-        exceptions: Tuple of exceptions to catch and retry
-    """
+
+class APIKeyMissingError(Exception):
+    """Exception raised when an API key is missing."""
+    pass
+
+
+def retry_with_exponential_backoff(max_retries: int = 3, base_delay: float = 1.0):
+    """Decorator for retrying functions with exponential backoff."""
     def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            last_exception = None
-
-            for attempt in range(max_retries + 1):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
-                except exceptions as e:
-                    last_exception = e
-
-                    if attempt == max_retries:
-                        logger.error(f"All {max_retries + 1} attempts failed for {func.__name__}")
-                        raise StockBotError(f"Function {func.__name__} failed after retries: {e}") from e
-
-                    # Calculate delay with exponential backoff
-                    delay = min(base_delay * (backoff_factor ** attempt), max_delay)
-
-                    # Add jitter to prevent thundering herd
-                    import random
-                    jitter = delay * 0.1 * random.uniform(-1, 1)
-                    delay = max(0.1, delay + jitter)
-
-                    logger.warning(
-                        f"Attempt {attempt + 1}/{max_retries + 1} failed for {func.__name__}: {e}. "
-                        f"Retrying in {delay:.1f}s..."
-                    )
-
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f"Attempt {attempt + 1} failed: {e}. Retrying in {delay}s...")
                     time.sleep(delay)
-
-            # This should never be reached
             return None
-
         return wrapper
     return decorator
 
 
-def handle_api_errors(exceptions_to_handle: tuple = (requests.RequestException,), custom_message: str = ""):
-    """
-    Decorator to handle API-related exceptions.
-
-    Args:
-        exceptions_to_handle: Tuple of exceptions to handle
-        custom_message: Custom error message prefix
-    """
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            try:
-                return func(*args, **kwargs)
-            except exceptions_to_handle as e:
-                error_msg = f"{custom_message} {str(e)}".strip()
-                logger.error(f"API error in {func.__name__}: {error_msg}")
-                raise DataFetchError(error_msg) from e
-            except Exception as e:
-                logger.error(f"Unexpected error in {func.__name__}: {e}")
-                raise StockBotError(f"Unexpected error in {func.__name__}: {e}") from e
-
-        return wrapper
-    return decorator
+def handle_api_errors(func: Callable) -> Callable:
+    """Decorator for handling API errors."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"API error in {func.__name__}: {e}")
+            raise APILimitError(f"API error: {e}")
+    return wrapper
 
 
-def validate_data(func_data: Any, validator_func: Callable[[Any], bool], error_message: str = "Data validation failed"):
-    """
-    Validate data using a validator function.
-
-    Args:
-        func_data: Data to validate
-        validator_func: Function that returns True if data is valid
-        error_message: Error message if validation fails
-
-    Raises:
-        ValidationError: If validation fails
-    """
-    if not validator_func(func_data):
-        logger.error(error_message)
-        raise ValidationError(error_message)
+def validate_data(data: Any, required_fields: list = None) -> bool:
+    """Validate data structure."""
+    if data is None:
+        return False
+    if required_fields:
+        if isinstance(data, dict):
+            return all(field in data for field in required_fields)
+    return True
 
 
-def safe_get(data: dict, keys: list, default: Any = None) -> Any:
-    """
-    Safely get nested dictionary values.
-
-    Args:
-        data: Dictionary to extract from
-        keys: List of keys to traverse
-        default: Default value if any key is missing
-
-    Returns:
-        Value at nested key or default
-    """
+def safe_get(data: Dict, key: str, default: Any = None) -> Any:
+    """Safely get value from dictionary."""
     try:
-        for key in keys:
-            if isinstance(data, dict) and key in data:
-                data = data[key]
-            else:
-                return default
-        return data
-    except (KeyError, TypeError, IndexError):
+        return data.get(key, default)
+    except (AttributeError, TypeError):
         return default
 
 
 def robust_float_conversion(value: Any, default: float = 0.0) -> float:
-    """
-    Robust conversion to float with proper error handling.
-
-    Args:
-        value: Value to convert
-        default: Default value if conversion fails
-
-    Returns:
-        Float value or default
-    """
-    if value is None or value == "":
-        return default
-
+    """Robustly convert value to float."""
     try:
-        # Handle string representations with currency symbols
-        if isinstance(value, str):
-            import re
-            # Remove common currency symbols and separators
-            clean_value = re.sub(r'[₹$€£,]', '', value.strip())
-            return float(clean_value)
-        else:
-            return float(value)
+        if value is None or value == '':
+            return default
+        return float(value)
     except (ValueError, TypeError):
-        logger.warning(f"Could not convert {value} to float, using default {default}")
         return default
 
 
 def robust_int_conversion(value: Any, default: int = 0) -> int:
-    """
-    Robust conversion to int with proper error handling.
-
-    Args:
-        value: Value to convert
-        default: Default value if conversion fails
-
-    Returns:
-        Int value or default
-    """
+    """Robustly convert value to int."""
     try:
-        # Handle float values (e.g., 100.0 to 100)
-        if isinstance(value, float):
-            # Check if it's a whole number
-            if value.is_integer():
-                return int(value)
-            else:
-                # Round to nearest integer
-                return int(round(value))
-
-        # Handle string values
-        if isinstance(value, str):
-            import re
-            # Remove decimal part if present
-            clean_value = re.sub(r'\..*$', '', re.sub(r'[₹$€£,]', '', value.strip()))
-            return int(clean_value)
-
-        return int(value)
+        if value is None or value == '':
+            return default
+        return int(float(value))
     except (ValueError, TypeError):
-        logger.warning(f"Could not convert {value} to int, using default {default}")
         return default
 
 
-def check_api_limits(api_name: str, rate_limits: dict) -> bool:
-    """
-    Check if API rate limits have been exceeded.
-
-    Args:
-        api_name: Name of the API
-        rate_limits: Dictionary with rate limit data
-
-    Returns:
-        True if within limits, False if exceeded
-    """
-    # This is a placeholder for rate limiting logic
-    # In production, you'd implement actual rate tracking
-
-    current_time = time.time()
-    request_count = rate_limits.get('count', 0)
-    window_start = rate_limits.get('window_start', current_time)
-    requests_per_minute = rate_limits.get('rpm', 5)
-
-    # Reset counter if window has passed (60 seconds)
-    if current_time - window_start > 60:
-        rate_limits['count'] = 0
-        rate_limits['window_start'] = current_time
-
-    # Check if limit exceeded
-    if request_count >= requests_per_minute:
-        logger.warning(f"API rate limit exceeded for {api_name}")
-        return False
-
-    # Increment counter
-    rate_limits['count'] = request_count + 1
-
+def check_api_limits() -> bool:
+    """Check if API limits are exceeded."""
+    # Placeholder implementation
     return True
 
 
-def graceful_shutdown(signals: list = None):
-    """
-    Handle graceful shutdown on signals.
-
-    Args:
-        signals: List of signals to handle (defaults to SIGINT, SIGTERM)
-    """
-    import signal
-    import sys
-
-    if signals is None:
-        signals = [signal.SIGINT, signal.SIGTERM]
-
-    def signal_handler(signum, frame):
-        """Signal handler for graceful shutdown."""
-        logger.info(f"Received signal {signum}, initiating graceful shutdown...")
-        # Perform cleanup here if needed
-        sys.exit(0)
-
-    for sig in signals:
-        signal.signal(sig, signal_handler)
-
-    logger.info("Graceful shutdown handler configured")
+def graceful_shutdown():
+    """Handle graceful shutdown."""
+    logger.info("Initiating graceful shutdown...")
 
 
-def retry_indicator_calculation(
-    max_retries: int = 3,
-    fallback_method: Callable = None,
-    exceptions: tuple = (Exception,)
-):
-    """
-    Decorator for indicator calculations with retry logic, fallback, and detailed logging.
+def log_error_context(error: Exception, context: Dict[str, Any] = None):
+    """Log error with context."""
+    context_str = f" Context: {context}" if context else ""
+    logger.error(f"Error: {error}{context_str}")
 
-    Args:
-        max_retries: Maximum number of retry attempts
-        fallback_method: Fallback method to use if primary method fails
-        exceptions: Tuple of exceptions to catch and retry
-    """
+
+def retry_indicator_calculation(max_retries: int = 3, fallback_method: Optional[Callable] = None):
+    """Decorator for retrying indicator calculations with optional fallback."""
+    logger.info(f"retry_indicator_calculation called with max_retries={max_retries}, fallback_method={fallback_method is not None}")
+
     def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            last_exception = None
-            symbol = kwargs.get('symbol', 'unknown')
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            logger.info(f"retry_indicator_calculation wrapper called for function: {func.__name__}")
+            logger.info(f"Arguments: {args}, kwargs: {kwargs}")
 
-            for attempt in range(max_retries + 1):
+            for attempt in range(max_retries):
                 try:
+                    logger.info(f"Attempt {attempt + 1}/{max_retries} for {func.__name__}")
                     result = func(*args, **kwargs)
-                    if attempt > 0:
-                        logger.info(f"Indicator {func.__name__} succeeded on attempt {attempt + 1} for {symbol}")
+                    logger.info(f"Attempt {attempt + 1} succeeded for {func.__name__}")
                     return result
-                except exceptions as e:
-                    last_exception = e
-
-                    if attempt == max_retries:
-                        # Try fallback method if available
-                        if fallback_method:
+                except Exception as e:
+                    logger.warning(f"Indicator calculation attempt {attempt + 1} failed: {e}")
+                    if attempt == max_retries - 1:
+                        logger.error(f"Indicator calculation failed after {max_retries} attempts: {e}")
+                        if fallback_method is not None:
+                            logger.info(f"Using fallback method: {fallback_method.__name__}")
                             try:
-                                logger.warning(f"Using fallback method for {func.__name__} after {max_retries + 1} failed attempts for {symbol}")
                                 return fallback_method(*args, **kwargs)
                             except Exception as fallback_e:
-                                logger.error(f"Fallback method also failed for {func.__name__} on {symbol}: {fallback_e}")
-
-                        logger.error(f"All {max_retries + 1} attempts failed for {func.__name__} on {symbol}: {e}")
-                        # Return neutral signal instead of raising exception
-                        return {"error": f"Indicator calculation failed after retries: {str(e)}"}
-
-                    # Log retry attempt
-                    logger.warning(
-                        f"Attempt {attempt + 1}/{max_retries + 1} failed for {func.__name__} on {symbol}: {e}. "
-                        f"Retrying..."
-                    )
-
-                    # Brief pause before retry
-                    time.sleep(0.1 * (attempt + 1))
-
-            # This should never be reached
-            return {"error": "Unexpected error in retry logic"}
-
+                                logger.error(f"Fallback method also failed: {fallback_e}")
+                                return None
+                        return None
+                    logger.warning(f"Retrying {func.__name__} in next attempt...")
+            return None
         return wrapper
     return decorator
-
-
-def log_error_context(func: Callable) -> Callable:
-    """
-    Decorator to add context to error logging.
-    """
-    @wraps(func)
-    def wrapper(*args, **kwargs) -> Any:
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            import inspect
-
-            # Get function arguments safely
-            try:
-                # Only log first few args for security
-                safe_args = []
-                for arg in args[:3]:  # Limit to first 3 args
-                    if isinstance(arg, dict):
-                        # Don't log entire dicts for security
-                        safe_arg = f"dict({len(arg)} keys)"
-                    elif isinstance(arg, (list, tuple)):
-                        safe_arg = f"{type(arg).__name__}({len(arg)} items)"
-                    else:
-                        safe_arg = str(arg)[:50] + "..." if len(str(arg)) > 50 else str(arg)
-                    safe_args.append(safe_arg)
-
-                args_str = ", ".join(safe_args)
-                if len(args) > 3:
-                    args_str += ", ..."
-
-                logger.error(
-                    f"Error in {func.__module__}.{func.__name__}({args_str}): {type(e).__name__}: {e}"
-                )
-            except Exception:
-                # If logging fails, just log the basics
-                logger.error(f"Error in {func.__module__}.{func.__name__}: {type(e).__name__}: {e}")
-
-            raise
-
-    return wrapper

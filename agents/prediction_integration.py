@@ -1,8 +1,4 @@
-"""
-Prediction Integration Module for Stock Trading Bot.
-Combines ML predictions with technical analysis, provides confidence scoring,
-fallback mechanisms, and real-time prediction updates.
-"""
+
 
 import logging
 import pandas as pd
@@ -10,15 +6,14 @@ import numpy as np
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 
-from config.config import ENSEMBLE_THRESHOLD, PROBABILITY_THRESHOLD
+from config.trading_config import ENSEMBLE_THRESHOLD, PROBABILITY_THRESHOLD
 from data.models import State
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 
 class PredictionAggregator:
-    """Aggregates predictions from multiple ML models and technical analysis."""
+    
 
     def __init__(self):
         self.ml_weights = {
@@ -36,7 +31,7 @@ class PredictionAggregator:
 
     def aggregate_ml_predictions(self, ml_predictions: Dict[str, Any],
                                nn_predictions: Dict[str, Any]) -> Dict[str, Any]:
-        """Aggregate predictions from all ML models."""
+        
         aggregated = {
             'individual_predictions': {},
             'ensemble_prediction': 0.5,
@@ -106,7 +101,7 @@ class PredictionAggregator:
     def combine_with_technical_analysis(self, ml_aggregated: Dict[str, Any],
                                       technical_signals: Dict[str, str],
                                       ensemble_signal: str) -> Dict[str, Any]:
-        """Combine ML predictions with technical analysis signals."""
+        
         combined = ml_aggregated.copy()
 
         # Convert technical ensemble signal to numeric
@@ -134,7 +129,7 @@ class PredictionAggregator:
         return combined
 
     def generate_final_signal(self, combined_prediction: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate final trading signal with confidence and fallback logic."""
+        
         final_signal = {
             'signal': 'neutral',
             'confidence': combined_prediction.get('confidence_score', 0.0),
@@ -165,7 +160,7 @@ class PredictionAggregator:
 
     def _apply_fallback_logic(self, combined_prediction: Dict[str, Any],
                             final_signal: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply fallback logic when confidence is low."""
+        
         final_signal['fallback_used'] = True
 
         # Fallback 1: Use technical analysis only
@@ -199,14 +194,14 @@ class PredictionAggregator:
 
 
 class RealTimePredictor:
-    """Handles real-time prediction updates and caching."""
+    
 
     def __init__(self):
         self.prediction_cache = {}
         self.cache_timeout = timedelta(minutes=15)  # Cache predictions for 15 minutes
 
     def should_update_prediction(self, symbol: str) -> bool:
-        """Check if prediction should be updated based on cache."""
+        
         if symbol not in self.prediction_cache:
             return True
 
@@ -217,14 +212,14 @@ class RealTimePredictor:
         return datetime.now() - cached_time > self.cache_timeout
 
     def cache_prediction(self, symbol: str, prediction: Dict[str, Any]):
-        """Cache prediction with timestamp."""
+        
         self.prediction_cache[symbol] = {
             'prediction': prediction,
             'timestamp': datetime.now()
         }
 
     def get_cached_prediction(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Get cached prediction if still valid."""
+        
         if symbol not in self.prediction_cache:
             return None
 
@@ -235,7 +230,7 @@ class RealTimePredictor:
         return cached_data['prediction']
 
     def clear_expired_cache(self):
-        """Clear expired predictions from cache."""
+        
         current_time = datetime.now()
         expired_symbols = []
 
@@ -251,7 +246,7 @@ class RealTimePredictor:
 
 
 class PredictionValidator:
-    """Validates predictions against recent performance and market conditions."""
+    
 
     def __init__(self):
         self.performance_history = {}
@@ -259,7 +254,7 @@ class PredictionValidator:
 
     def validate_prediction(self, symbol: str, prediction: Dict[str, Any],
                           recent_performance: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Validate prediction based on historical performance."""
+        
         validated = prediction.copy()
         validated['validation_warnings'] = []
 
@@ -286,7 +281,7 @@ class PredictionValidator:
         return validated
 
     def _update_performance_history(self, symbol: str, prediction: Dict[str, Any]):
-        """Update performance history for validation."""
+        
         if symbol not in self.performance_history:
             self.performance_history[symbol] = []
 
@@ -302,7 +297,7 @@ class PredictionValidator:
 
 
 class RiskAdjustedPredictor:
-    """Applies risk adjustments to predictions based on market conditions."""
+    
 
     def __init__(self):
         self.volatility_threshold = 0.05  # 5% annualized volatility
@@ -310,7 +305,7 @@ class RiskAdjustedPredictor:
 
     def apply_risk_adjustments(self, prediction: Dict[str, Any],
                              market_conditions: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply risk-based adjustments to predictions."""
+        
         adjusted = prediction.copy()
 
         # Check volatility
@@ -349,7 +344,7 @@ class RiskAdjustedPredictor:
 
 
 class PredictionIntegrationAgent:
-    """Main agent for integrating all prediction components."""
+    
 
     def __init__(self):
         self.aggregator = PredictionAggregator()
@@ -358,7 +353,7 @@ class PredictionIntegrationAgent:
         self.risk_adjuster = RiskAdjustedPredictor()
 
     def generate_integrated_prediction(self, state: State, symbol: str) -> Dict[str, Any]:
-        """Generate fully integrated prediction for a symbol."""
+        
         # Check cache first
         if not self.realtime_predictor.should_update_prediction(symbol):
             cached = self.realtime_predictor.get_cached_prediction(symbol)
@@ -408,7 +403,7 @@ class PredictionIntegrationAgent:
         return validated
 
     def _extract_market_conditions(self, state: State, symbol: str) -> Dict[str, Any]:
-        """Extract current market conditions for risk adjustment."""
+        
         conditions = {}
 
         # Get volatility from engineered features
@@ -423,7 +418,7 @@ class PredictionIntegrationAgent:
         return conditions
 
     def _get_model_versions(self, ml_predictions: Dict, nn_predictions: Dict) -> Dict[str, str]:
-        """Get versions/info of models used."""
+        
         versions = {}
 
         if ml_predictions.get('trained_models'):
@@ -435,7 +430,7 @@ class PredictionIntegrationAgent:
         return versions
 
     def batch_predict(self, state: State, symbols: List[str]) -> Dict[str, Dict[str, Any]]:
-        """Generate predictions for multiple symbols."""
+        
         predictions = {}
 
         for symbol in symbols:
@@ -457,16 +452,7 @@ class PredictionIntegrationAgent:
 
 
 def prediction_integration_agent(state: State) -> State:
-    """
-    Prediction integration agent for the LangGraph workflow.
-    Combines ML predictions with technical analysis for final trading signals.
-
-    Args:
-        state: Current workflow state
-
-    Returns:
-        Updated state with integrated predictions
-    """
+    
     logging.info("Starting prediction integration agent")
 
     stock_data = state.get("stock_data", {})
