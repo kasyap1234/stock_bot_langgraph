@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 def _get_stock_data(symbol: str, period: str = "1y") -> pd.DataFrame:
     """
     Fetch historical stock data for given symbol.
+    Uses multiple methods to ensure data retrieval works.
 
     Args:
         symbol: Stock symbol (e.g., "RELIANCE.NS")
@@ -31,28 +32,110 @@ def _get_stock_data(symbol: str, period: str = "1y") -> pd.DataFrame:
     Returns:
         pandas DataFrame with OHLCV data
     """
+    import os
+
+    # Disable curl-cffi to avoid browser impersonation issues
+    os.environ['YF_USE_CURL'] = '0'
+
+    # Method 1: Try yfinance.download() - most reliable, doesn't require ticker.info
+    try:
+        import yfinance as yf
+
+        logger.info(f"Fetching {symbol} using yfinance.download()...")
+
+        # Use download() instead of Ticker().history() to avoid info() calls
+        data = yf.download(
+            symbol,
+            period=period,
+            progress=False,
+            auto_adjust=True,
+            ignore_tz=True,
+            timeout=30
+        )
+
+        if data.empty:
+            raise Exception("No data returned from yfinance.download()")
+
+        # Handle MultiIndex columns (yfinance.download can return MultiIndex)
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+
+        # Ensure index is datetime and tz-naive
+        if not isinstance(data.index, pd.DatetimeIndex):
+            data.index = pd.to_datetime(data.index)
+
+        if data.index.tz is not None:
+            data.index = data.index.tz_localize(None)
+
+        data = data.sort_index()
+
+        logger.info(f"✓ Fetched {len(data)} rows for {symbol} using yfinance.download()")
+        return data
+
+    except Exception as e:
+        logger.warning(f"yfinance.download() failed for {symbol}: {e}")
+
+    # Method 2: Try pandas_datareader as fallback
+    try:
+        from datetime import datetime, timedelta
+        import pandas_datareader.data as web
+
+        logger.info(f"Fetching {symbol} using pandas_datareader...")
+
+        # Calculate date range
+        end_date = datetime.now()
+        period_days = {
+            "1mo": 30, "3mo": 90, "6mo": 180,
+            "1y": 365, "2y": 730, "5y": 1825, "max": 3650
+        }
+        days = period_days.get(period, 365)
+        start_date = end_date - timedelta(days=days)
+
+        data = web.get_data_yahoo(symbol, start=start_date, end=end_date)
+
+        if data.empty:
+            raise Exception("No data from pandas_datareader")
+
+        # Make tz-naive
+        if data.index.tz is not None:
+            data.index = data.index.tz_localize(None)
+
+        data = data.sort_index()
+
+        logger.info(f"✓ Fetched {len(data)} rows for {symbol} using pandas_datareader")
+        return data
+
+    except Exception as e2:
+        logger.warning(f"pandas_datareader failed for {symbol}: {e2}")
+
+    # Method 3: Last resort - try yahooquery
     try:
         from yahooquery import Ticker
+
+        logger.info(f"Fetching {symbol} using yahooquery...")
+
         ticker = Ticker(symbol)
         data = ticker.history(period=period)
 
         if data.empty:
-            raise Exception("No data from API")
+            raise Exception("No data from yahooquery")
 
-        # Handle MultiIndex if present (e.g., when yahooquery returns tuples in index)
+        # Handle MultiIndex
         if isinstance(data.index, pd.MultiIndex):
             data = data.reset_index()
             data.set_index('date', inplace=True)
 
-        # Convert to UTC and make tz-naive to avoid timezone mismatch errors
+        # Convert to tz-naive
         data.index = pd.to_datetime(data.index, utc=True).tz_localize(None)
-        data = data.sort_index()  # Sort by date to ensure proper indexing
+        data = data.sort_index()
 
-        logger.info(f"Fetched real data for {symbol}: {len(data)} rows")
+        logger.info(f"✓ Fetched {len(data)} rows for {symbol} using yahooquery")
         return data
-    except Exception as e:
-        logger.error(f"Failed to fetch real data for {symbol}: {e}")
-        raise  # Raise to prevent fallback; handle in caller if needed
+
+    except Exception as e3:
+        error_msg = f"All data sources failed for {symbol}"
+        logger.error(error_msg)
+        raise Exception(error_msg)
 
 
 def data_fetcher_agent(state: State, symbols: List[str] = None, real_time: bool = False,
