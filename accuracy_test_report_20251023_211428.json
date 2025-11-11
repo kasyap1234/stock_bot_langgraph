@@ -1,0 +1,254 @@
+{
+  "timestamp": "2025-10-23T21:12:53.034758",
+  "stocks_tested": [
+    "RELIANCE.NS",
+    "TCS.NS",
+    "INFY.NS"
+  ],
+  "overall_metrics": {
+    "average_confidence": "0.16",
+    "confidence_std": "0.22",
+    "average_composite_score": "-0.023",
+    "total_issues": 12,
+    "functional_components": 4
+  },
+  "individual_results": {
+    "RELIANCE.NS": {
+      "symbol": "RELIANCE.NS",
+      "timestamp": "2025-10-23T21:12:53.034798",
+      "recommendation": "HOLD",
+      "confidence": 0,
+      "composite_score": 0,
+      "data_quality": "error",
+      "issues": [
+        "Data quality assessment failed: 'list' object has no attribute 'get'"
+      ],
+      "component_results": {
+        "technical": {
+          "status": "error",
+          "signals_generated": 0,
+          "signal_types": [],
+          "issues": [
+            "'stock_data'"
+          ]
+        },
+        "fundamental": {
+          "status": "warning",
+          "metrics_available": 0,
+          "valuation_status": "unknown",
+          "issues": [
+            "Fundamental analysis failed or returned errors"
+          ]
+        },
+        "sentiment": {
+          "status": "warning",
+          "sentiment_score": 0,
+          "news_count": 0,
+          "issues": [
+            "Sentiment analysis failed"
+          ]
+        },
+        "risk": {
+          "status": "warning",
+          "risk_level": "unknown",
+          "volatility": 0,
+          "sharpe_ratio": 0,
+          "issues": [
+            "Risk assessment failed"
+          ]
+        },
+        "macro": {
+          "status": "success",
+          "composite_score": 0.3,
+          "components_analyzed": 4,
+          "issues": []
+        }
+      },
+      "confidence_breakdown": {}
+    },
+    "TCS.NS": {
+      "symbol": "TCS.NS",
+      "timestamp": "2025-10-23T21:13:40.927722",
+      "recommendation": "HOLD",
+      "confidence": 0,
+      "composite_score": 0,
+      "data_quality": "error",
+      "issues": [
+        "Data quality assessment failed: 'list' object has no attribute 'get'"
+      ],
+      "component_results": {
+        "technical": {
+          "status": "error",
+          "signals_generated": 0,
+          "signal_types": [],
+          "issues": [
+            "'stock_data'"
+          ]
+        },
+        "fundamental": {
+          "status": "warning",
+          "metrics_available": 0,
+          "valuation_status": "unknown",
+          "issues": [
+            "Fundamental analysis failed or returned errors"
+          ]
+        },
+        "sentiment": {
+          "status": "warning",
+          "sentiment_score": 0,
+          "news_count": 0,
+          "issues": [
+            "Sentiment analysis failed"
+          ]
+        },
+        "risk": {
+          "status": "warning",
+          "risk_level": "unknown",
+          "volatility": 0,
+          "sharpe_ratio": 0,
+          "issues": [
+            "Risk assessment failed"
+          ]
+        },
+        "macro": {
+          "status": "success",
+          "composite_score": 0.3,
+          "components_analyzed": 4,
+          "issues": []
+        }
+      },
+      "confidence_breakdown": {}
+    },
+    "INFY.NS": {
+      "symbol": "INFY.NS",
+      "timestamp": "2025-10-23T21:14:12.451030",
+      "recommendation": "HOLD",
+      "confidence": 0.467741901213945,
+      "composite_score": -0.0686314312341855,
+      "data_quality": "good",
+      "issues": [],
+      "component_results": {
+        "technical": {
+          "status": "error",
+          "signals_generated": 2,
+          "signal_types": [
+            "error",
+            "validation_info"
+          ],
+          "issues": [
+            "Technical analysis error: Data validation failed",
+            "Missing basic indicators: ['RSI', 'MACD', 'SMA', 'EMA']"
+          ]
+        },
+        "fundamental": {
+          "status": "success",
+          "metrics_available": 22,
+          "valuation_status": "unknown",
+          "issues": []
+        },
+        "sentiment": {
+          "status": "success",
+          "sentiment_score": 0.0,
+          "news_count": 0,
+          "issues": []
+        },
+        "risk": {
+          "status": "success",
+          "risk_level": "unknown",
+          "volatility": 0.24710144633838713,
+          "sharpe_ratio": 0.04896714721747934,
+          "issues": []
+        },
+        "macro": {
+          "status": "success",
+          "composite_score": 0.3,
+          "components_analyzed": 4,
+          "issues": []
+        }
+      },
+      "confidence_breakdown": {}
+    }
+  },
+  "issues_found": [
+    {
+      "category": "general",
+      "issue": "Data quality assessment failed: 'list' object has no attribute 'get'",
+      "severity": "medium",
+      "timestamp": "2025-10-23T21:13:40.927596"
+    },
+    {
+      "category": "technical",
+      "issue": "'stock_data'",
+      "severity": "medium",
+      "timestamp": "2025-10-23T21:13:40.927606"
+    },
+    {
+      "category": "fundamental",
+      "issue": "Fundamental analysis failed or returned errors",
+      "severity": "medium",
+      "timestamp": "2025-10-23T21:13:40.927609"
+    },
+    {
+      "category": "sentiment",
+      "issue": "Sentiment analysis failed",
+      "severity": "medium",
+      "timestamp": "2025-10-23T21:13:40.927611"
+    },
+    {
+      "category": "risk",
+      "issue": "Risk assessment failed",
+      "severity": "medium",
+      "timestamp": "2025-10-23T21:13:40.927612"
+    },
+    {
+      "category": "general",
+      "issue": "Data quality assessment failed: 'list' object has no attribute 'get'",
+      "severity": "medium",
+      "timestamp": "2025-10-23T21:14:12.450878"
+    },
+    {
+      "category": "technical",
+      "issue": "'stock_data'",
+      "severity": "medium",
+      "timestamp": "2025-10-23T21:14:12.450884"
+    },
+    {
+      "category": "fundamental",
+      "issue": "Fundamental analysis failed or returned errors",
+      "severity": "medium",
+      "timestamp": "2025-10-23T21:14:12.450885"
+    },
+    {
+      "category": "sentiment",
+      "issue": "Sentiment analysis failed",
+      "severity": "medium",
+      "timestamp": "2025-10-23T21:14:12.450887"
+    },
+    {
+      "category": "risk",
+      "issue": "Risk assessment failed",
+      "severity": "medium",
+      "timestamp": "2025-10-23T21:14:12.450888"
+    },
+    {
+      "category": "technical",
+      "issue": "Technical analysis error: Data validation failed",
+      "severity": "medium",
+      "timestamp": "2025-10-23T21:14:28.934635"
+    },
+    {
+      "category": "technical",
+      "issue": "Missing basic indicators: ['RSI', 'MACD', 'SMA', 'EMA']",
+      "severity": "medium",
+      "timestamp": "2025-10-23T21:14:28.934642"
+    }
+  ],
+  "confidence_analysis": {},
+  "feature_functionality": {
+    "technical": "failed",
+    "fundamental": "functional",
+    "sentiment": "functional",
+    "risk": "functional",
+    "macro": "functional"
+  }
+}
